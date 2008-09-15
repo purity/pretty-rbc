@@ -40,7 +40,7 @@ end
 #     as arguments then a messy code change is required
 #
 class InstructionChanges
-  attr_accessor :cm, :iseq, :literals, :exceptions, :lines
+  attr_accessor :cm, :iseq, :literals, :local_names, :exceptions, :lines
   attr_accessor :immutable_gotos
 
   GOTO_OFFSET = 100_000_000
@@ -65,6 +65,7 @@ class InstructionChanges
     @cm = cm
     @iseq = cm.bytecodes.decode.flatten
     @literals = cm.literals.to_a
+    @local_names = cm.local_names.to_a
     @exceptions = cm.exceptions.to_a.map { |tup| tup.to_a }
     @lines = cm.lines.to_a.map { |tup| tup.to_a }
     @immutable_gotos = []
@@ -76,6 +77,7 @@ class InstructionChanges
 
     @cm.bytecodes = encoder.encode_stream(layered_iseq)
     @cm.literals = @literals.to_tup
+    @cm.local_names = @local_names.to_tup
     @cm.exceptions = @exceptions.map { |arr| arr.to_tup }.to_tup
     @cm.lines = @lines.map { |arr| arr.to_tup }.to_tup
   end
