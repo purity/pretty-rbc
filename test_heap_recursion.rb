@@ -130,8 +130,12 @@ CompiledMethod 17
     else
       n + fad(n - 1)  # __locals__ << [n]
     end
-                      # __tmp__ = __locals__.pop
-                      # n = __tmp__[0]
+                      # if __locals__.empty?
+                      #   <ret>
+                      # else
+                      #   __tmp__ = __locals__.pop
+                      #   n = __tmp__[0]
+                      #   <resume>
   end
 
   def self.fib(n)
