@@ -8,9 +8,9 @@ CompiledMethod 17
   -1
   1
   0
-  InstructionSequence 70
+  InstructionSequence 58
     make_array 0                      (0)
-    set_local 2                       (2)
+    set_local 1                       (2)
     pop                               (4)
     check_argcount 1 1                (5)
     set_local_from_fp 0 0             (8)
@@ -19,103 +19,89 @@ CompiledMethod 17
     send_stack 0 1                    (14)
     goto_if_false 22                  (17)
     meta_push_0                       (19)
-    goto 38                           (20)
+    goto 39                           (20)
     meta_push_1                       (22)
     push_local 0                      (23)
     meta_send_op_minus                (25)
     push_local 0                      (26)
-    make_array 1                      (28)
-    push_local 2                      (30)
-    send_stack 2 1                    (32)
-    pop                               (35)
-    goto 69                           (36)
-    push_local 0                      (38)
-    meta_send_op_plus                 (40)
-    push_local 2                      (41)
-    send_stack 3 0                    (43)
-    goto_if_false 49                  (46)
-    sret                              (48)
-    push_local 2                      (49)
-    send_stack 4 0                    (51)
-    set_local 1                       (54)
-    pop                               (56)
-    push_int 0                        (57)
-    push_local 1                      (59)
-    send_stack 5 1                    (61)
-    set_local 0                       (64)
-    pop                               (66)
-    goto 38                           (67)
-    check_argcount 1 1                (69)
-    set_local 0                       (72)
-    pop                               (74)
-    meta_push_0                       (75)
-    push_local 0                      (76)
-    send_stack 0 1                    (78)
-    goto_if_false 86                  (81)
-    meta_push_0                       (83)
-    goto 102                          (84)
-    meta_push_1                       (86)
-    push_local 0                      (87)
-    meta_send_op_minus                (89)
-    push_local 0                      (90)
-    make_array 1                      (92)
-    push_local 2                      (94)
-    send_stack 2 1                    (96)
-    pop                               (99)
-    goto 69                           (100)
-    push_local 0                      (102)
-    meta_send_op_plus                 (104)
-    push_local 2                      (105)
-    send_stack 3 0                    (107)
-    goto_if_false 113                 (110)
-    sret                              (112)
-    push_local 2                      (113)
-    send_stack 4 0                    (115)
-    set_local 1                       (118)
-    pop                               (120)
-    push_int 0                        (121)
-    push_local 1                      (123)
-    send_stack 5 1                    (125)
-    set_local 0                       (128)
-    pop                               (130)
-    goto 102                          (131)
+    push_local 1                      (28)
+    send_stack 2 1                    (30)
+    pop                               (33)
+    goto 57                           (34)
+    push_local 0                      (36)
+    meta_send_op_plus                 (38)
+    push_local 1                      (39)
+    send_stack 3 0                    (41)
+    goto_if_false 47                  (44)
+    sret                              (46)
+    push_local 1                      (47)
+    send_stack 4 0                    (49)
+    set_local 0                       (52)
+    pop                               (54)
+    goto 36                           (55)
+    check_argcount 1 1                (57)
+    set_local 0                       (60)
+    pop                               (62)
+    meta_push_0                       (63)
+    push_local 0                      (64)
+    send_stack 0 1                    (66)
+    goto_if_false 74                  (69)
+    meta_push_0                       (71)
+    goto 91                           (72)
+    meta_push_1                       (74)
+    push_local 0                      (75)
+    meta_send_op_minus                (77)
+    push_local 0                      (78)
+    push_local 1                      (80)
+    send_stack 2 1                    (82)
+    pop                               (85)
+    goto 57                           (86)
+    push_local 0                      (88)
+    meta_send_op_plus                 (90)
+    push_local 1                      (91)
+    send_stack 3 0                    (93)
+    goto_if_false 99                  (96)
+    sret                              (98)
+    push_local 1                      (99)
+    send_stack 4 0                    (101)
+    set_local 0                       (104)
+    pop                               (106)
+    goto 88                           (107)
   Symbol "fad"
   Symbol "/tmp/test4.rb"
-  3
-  Tuple 6
+  2
+  Tuple 5
     SendSite "<="
     SendSite "fad"
     SendSite "<<"
     SendSite "empty?"
     SendSite "pop"
-    SendSite "at"
   Tuple 3
     Tuple 1
       Symbol "n"
     Nil
     Nil
-  Tuple 3
+  Tuple 2
     Symbol "n"
-    Symbol "__tmp__"
     Symbol "__locals__"
   Tuple 0
   Tuple 4
     Tuple 3
       5
       10
-      11
+      126
     Tuple 3
       11
       18
-      13
+      128
     Tuple 3
       19
       21
-      14
+      129
     Tuple 3
       22
-      133
-      16
+      109
+      131
   Nil
   Nil
   Nil
@@ -128,13 +114,12 @@ CompiledMethod 17
     if n <= 0
       0
     else
-      n + fad(n - 1)  # __locals__ << [n]
+      n + fad(n - 1)  # __locals__ << n
     end
                       # if __locals__.empty?
-                      #   <ret>
+                      #   <return>
                       # else
-                      #   __tmp__ = __locals__.pop
-                      #   n = __tmp__[0]
+                      #   n = __locals__.pop
                       #   <resume>
   end
 
