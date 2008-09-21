@@ -163,6 +163,40 @@ class InstructionChanges
     recalculate_lines(:delete, i, size_diff)
   end
 
+  def swap(i)
+
+    raise "error: swap: no Symbol at 'i'" unless
+      @iseq[i].kind_of? Symbol
+
+    k = self.next(i)
+    raise "error: swap: no ins after 'i'" if k.nil?
+
+    size_i = k - i
+
+    n = k.succ
+    n += 1 while n < @iseq.length and @iseq[n].kind_of? Integer
+    size_k = n - k
+
+    values_i = @iseq[i,size_i]
+    values_k = @iseq[k,size_k]
+
+    replace(i, *values_k)
+    replace(i + size_k, *values_i)
+
+    x = i + size_k
+
+    @iseq.each_index do |n|
+      if at_goto? n
+        if @iseq[n.succ] == k
+          @iseq[n.succ] = x
+        end
+      end
+    end
+
+    recalculate_exceptions(:swap, i, size_i + size_k)
+    recalculate_lines(:swap, i, size_i + size_k)
+  end
+
   def recalculate_gotos(action, i, size_diff)
     return if size_diff == 0
     k = i + (size_diff - 1)
@@ -485,40 +519,6 @@ class InstructionChanges
     if high >= @cm.local_count
       @cm.local_count = high.succ
     end
-  end
-
-  def swap(i)
-
-    raise "error: swap: no Symbol at 'i'" unless
-      @iseq[i].kind_of? Symbol
-
-    k = self.next(i)
-    raise "error: swap: no ins after 'i'" if k.nil?
-
-    size_i = k - i
-
-    n = k.succ
-    n += 1 while n < @iseq.length and @iseq[n].kind_of? Integer
-    size_k = n - k
-
-    values_i = @iseq[i,size_i]
-    values_k = @iseq[k,size_k]
-
-    replace(i, *values_k)
-    replace(i + size_k, *values_i)
-
-    x = i + size_k
-
-    @iseq.each_index do |n|
-      if at_goto? n
-        if @iseq[n.succ] == k
-          @iseq[n.succ] = x
-        end
-      end
-    end
-
-    recalculate_exceptions(:swap, i, size_i + size_k)
-    recalculate_lines(:swap, i, size_i + size_k)
   end
 
   def self.wrap(iseq)
@@ -865,6 +865,15 @@ class InstructionChanges
     ic.delete(2)
     raise "fail 80" unless ic.iseq == [:hello, 3, :hi, 2, :what]
     raise "fail 81" unless ic.exceptions == [[0, 1, 4]]
+
+    ic.iseq = [:goto, 2, :hi]
+    ic.exceptions = [[0, 1, 2]]
+    ic.lines = [[0, 2, 5]]
+
+    ic.insert(0, [])
+    raise "fail 82.0" unless ic.iseq == [:goto, 2, :hi]
+    raise "fail 82.1" unless ic.exceptions == [[0, 1, 2]]
+    raise "fail 82.2" unless ic.lines == [[0, 2, 5]]
   end
 end
 

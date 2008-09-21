@@ -19,8 +19,9 @@ module SelfTailCall
     end
   end
 
-  def self.modify_iseq_copy(ic, num_args, uniq_arg_counts,
-                                len_orig_iseq, len_orig_exc, len_orig_lines)
+  def self.modify_iseq_copy(ic, num_args, uniq_arg_counts, original_lengths)
+
+    len_orig_iseq, len_orig_exc, len_orig_lines = original_lengths
 
     ic.immutable_gotos = []
     uniq_arg_counts.each_value do |v|
@@ -70,6 +71,8 @@ module SelfTailCall
     len_orig_exc = ic.exceptions.length
     len_orig_lines = ic.lines.length
 
+    original_lengths = [len_orig_iseq, len_orig_exc, len_orig_lines]
+
     tail_calls.each do |info|
       index, num_args = info
       if uniq_arg_counts[num_args]
@@ -77,8 +80,7 @@ module SelfTailCall
       else
         uniq_arg_counts[num_args] = ic.iseq.length
         ic.iseq[index.succ] = uniq_arg_counts[num_args]
-        modify_iseq_copy(ic, num_args, uniq_arg_counts,
-                            len_orig_iseq, len_orig_exc, len_orig_lines)
+        modify_iseq_copy(ic, num_args, uniq_arg_counts, original_lengths)
       end
     end
 
@@ -87,8 +89,7 @@ module SelfTailCall
     ic.lines = ic.lines[0...len_orig_lines]
 
     arg_counts.uniq.each do |num_args|
-      modify_iseq_copy(ic, num_args, uniq_arg_counts,
-                            len_orig_iseq, len_orig_exc, len_orig_lines)
+      modify_iseq_copy(ic, num_args, uniq_arg_counts, original_lengths)
     end
   end
 
@@ -103,8 +104,8 @@ module SelfTailCall
     end
   end
 
-  def self.find(ic, offset = 0)
-    i = offset
+  def self.find(ic, start_at = 0)
+    i = start_at
 
     while i
       if ic.iseq[i] == :send_stack and

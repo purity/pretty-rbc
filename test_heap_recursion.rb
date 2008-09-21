@@ -1,140 +1,68 @@
 
 module TestHeap
 
-=begin
-
-CompiledMethod 17
-  Nil
-  -1
-  1
-  0
-  InstructionSequence 58
-    make_array 0                      (0)
-    set_local 1                       (2)
-    pop                               (4)
-    check_argcount 1 1                (5)
-    set_local_from_fp 0 0             (8)
-    meta_push_0                       (11)
-    push_local 0                      (12)
-    send_stack 0 1                    (14)
-    goto_if_false 22                  (17)
-    meta_push_0                       (19)
-    goto 39                           (20)
-    meta_push_1                       (22)
-    push_local 0                      (23)
-    meta_send_op_minus                (25)
-    push_local 0                      (26)
-    push_local 1                      (28)
-    send_stack 2 1                    (30)
-    pop                               (33)
-    goto 57                           (34)
-    push_local 0                      (36)
-    meta_send_op_plus                 (38)
-    push_local 1                      (39)
-    send_stack 3 0                    (41)
-    goto_if_false 47                  (44)
-    sret                              (46)
-    push_local 1                      (47)
-    send_stack 4 0                    (49)
-    set_local 0                       (52)
-    pop                               (54)
-    goto 36                           (55)
-    check_argcount 1 1                (57)
-    set_local 0                       (60)
-    pop                               (62)
-    meta_push_0                       (63)
-    push_local 0                      (64)
-    send_stack 0 1                    (66)
-    goto_if_false 74                  (69)
-    meta_push_0                       (71)
-    goto 91                           (72)
-    meta_push_1                       (74)
-    push_local 0                      (75)
-    meta_send_op_minus                (77)
-    push_local 0                      (78)
-    push_local 1                      (80)
-    send_stack 2 1                    (82)
-    pop                               (85)
-    goto 57                           (86)
-    push_local 0                      (88)
-    meta_send_op_plus                 (90)
-    push_local 1                      (91)
-    send_stack 3 0                    (93)
-    goto_if_false 99                  (96)
-    sret                              (98)
-    push_local 1                      (99)
-    send_stack 4 0                    (101)
-    set_local 0                       (104)
-    pop                               (106)
-    goto 88                           (107)
-  Symbol "fad"
-  Symbol "/tmp/test4.rb"
-  2
-  Tuple 5
-    SendSite "<="
-    SendSite "fad"
-    SendSite "<<"
-    SendSite "empty?"
-    SendSite "pop"
-  Tuple 3
-    Tuple 1
-      Symbol "n"
-    Nil
-    Nil
-  Tuple 2
-    Symbol "n"
-    Symbol "__locals__"
-  Tuple 0
-  Tuple 4
-    Tuple 3
-      5
-      10
-      126
-    Tuple 3
-      11
-      18
-      128
-    Tuple 3
-      19
-      21
-      129
-    Tuple 3
-      22
-      109
-      131
-  Nil
-  Nil
-  Nil
-  Nil
-
-=end
-
   def self.fad(n)
-                      # __locals__ = []
+                      # __stack__ = []
     if n <= 0
       0
     else
-      n + fad(n - 1)  # __locals__ << n
+                      # __stack__ << n
+      n + fad(n - 1)  # __stack__ << 0
     end
-                      # if __locals__.empty?
+                      # if __stack__.empty?
                       #   <return>
                       # else
-                      #   n = __locals__.pop
-                      #   <resume>
+                      #   __iseq_id__ = __stack__.pop
+                      #   n = __stack__.pop
+                      #   if __iseq_id__ == 0
+                      #     <resume in original>
+                      #   elsif __iseq_id__ == 1
+                      #     <resume in first copy>
   end
 
-  def self.fib(n)
+  def self.fib(n, useful = :no)
     if n <= 1
-      n
+      begin
+        raise n.to_s
+      rescue Exception => e
+        e.to_s.to_i
+      end
     else
-      fib(n - 2) + fib(n - 1)
+      begin
+        x = n - 2
+        y = n - 1
+        z = fib(x, :yes) + fib(y)
+        raise z.to_s
+      rescue Exception => e
+        e.to_s.to_i
+      end
+    end
+  end
+
+  def self.make_btree(ary, numl = 0, numr = (ary.length - 1))
+    if numl > numr
+      nil
+    else
+      i = ((numr - numl) / 2) + numl
+      [make_btree(ary, numl, i - 1), ary[i], make_btree(ary, i.succ, numr)]
+    end
+  end
+
+  def self.make_array(bt)
+    if bt.nil?
+      []
+    else
+      make_array(bt[0]) + [bt[1]] + make_array(bt[2])
     end
   end
 end
 
-num = 2_000
+num = 200_000
+ary = (0..99999).to_a
 
 puts TestHeap.fad(num)
 
-puts TestHeap.fib(10)
+puts TestHeap.make_array(TestHeap.make_btree(ary)) == ary
+
+puts TestHeap.fib(20)
 
