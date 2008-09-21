@@ -103,8 +103,7 @@ module HeapRecursion
     (0...iseq_count).each do |k|
 
       ary += [:push_int, k, :push_local, ic.cm.local_count.succ,
-              :send_stack, ic.literals.length + 3, 1,
-              :goto_if_false, 99999, :goto, 99999]
+              :meta_send_op_equal, :goto_if_false, 99999, :goto, 99999]
     end
 
     ic.insert(idx_at_ret.succ, ary)
@@ -126,7 +125,6 @@ module HeapRecursion
     ic.literals << SendSite.new(:<<)
     ic.literals << SendSite.new(:pop)
     ic.literals << SendSite.new(:empty?)
-    ic.literals << SendSite.new(:==)
   end
 
   def self.modify_iseq_copy(ic, num_args, static_gotos, original_lengths)
