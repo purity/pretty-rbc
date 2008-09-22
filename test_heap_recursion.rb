@@ -55,6 +55,17 @@ module TestHeap
       make_array(bt[0]) + [bt[1]] + make_array(bt[2])
     end
   end
+
+  def self.__block__(obj = :hi)     # TODO handle this
+    if obj.nil?
+      'nil'
+    else
+      f = lambda do |obj1|
+        __block__(obj1)
+      end
+      f.call(nil)
+    end
+  end
 end
 
 num = 200_000
@@ -65,4 +76,6 @@ puts TestHeap.fad(num)
 puts TestHeap.make_array(TestHeap.make_btree(ary)) == ary
 
 puts TestHeap.fib(20)
+
+#puts TestHeap.__block__
 
