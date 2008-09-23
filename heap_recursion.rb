@@ -14,9 +14,8 @@ module HeapRecursion
   end
 
   # these are just the indexes that point at
-  # the beginning of every iseq copy except
-  # the original (at zero). they're retrieved
-  # from goto's in the original iseq
+  # the beginning of every iseq copy.
+  # they're retrieved from goto's in the original iseq
   #
   def self.get_static_gotos(ic, rec_calls)
     rec_calls.inject([]) do |gotos, (i, )|
@@ -67,6 +66,20 @@ module HeapRecursion
     iseq_metadata   # [[start index, identifier]]
   end
 
+  def self.delete_return_instructions(ic, static_gotos)    # all but the original iseq
+
+    ic.immutable_gotos = []
+    i = static_gotos.first
+
+    while i
+      if ic.iseq[i] == :sret
+        ic.delete(i)
+      else
+        i = ic.next(i)
+      end
+    end
+  end
+
   def self.insert_push_stack(ic, idx_at_goto)
     ary = []
 
@@ -86,9 +99,8 @@ module HeapRecursion
 
   def self.insert_pop_stack(ic, idx_at_ret, iseq_count)
 
-    ary = [:push_local, ic.cm.local_count, :send_stack, ic.literals.length + 2, 0,
-            :goto_if_false, 99999, :sret,
-            :push_local, ic.cm.local_count, :send_stack, ic.literals.length + 1, 0,
+    ary = [:push_local, ic.cm.local_count,
+            :send_stack, ic.literals.length + 1, 0,
             :set_local, ic.cm.local_count.succ, :pop]
 
     k = ic.cm.local_count - 1
@@ -107,7 +119,6 @@ module HeapRecursion
     end
 
     ic.insert(idx_at_ret.succ, ary)
-    ic.delete(idx_at_ret)
 
     idx_at_ret + ary.length + 1
   end
@@ -124,7 +135,6 @@ module HeapRecursion
   def self.insert_send_sites(ic)
     ic.literals << SendSite.new(:<<)
     ic.literals << SendSite.new(:pop)
-    ic.literals << SendSite.new(:empty?)
   end
 
   def self.modify_iseq_copy(ic, num_args, static_gotos, original_lengths)
@@ -205,7 +215,7 @@ module HeapRecursion
     while i
       if ic.iseq[i] == :goto
         if static_gotos.include? ic.iseq[i.succ]
-          k = i
+          k = ic.previous(i)
           while k
             if ic.iseq[k] == :push_int
               iseq_id = get_iseq_id(iseq_metadata, k)
@@ -250,8 +260,6 @@ module HeapRecursion
     i = 0
     while i
       if ic.iseq[i] == :sret
-        ic.iseq[i - 1] = i.succ
-
         k = i.succ
         while k
           if iseq_id == iseq_count
@@ -301,6 +309,7 @@ module HeapRecursion
     modify_iseq_identifiers(ic, static_gotos)
     modify_resumption_gotos(ic, rec_calls, static_gotos)
 
+    delete_return_instructions(ic, static_gotos)
     insert_init_stack(ic)
     insert_send_sites(ic)
   end

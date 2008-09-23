@@ -9,9 +9,7 @@ module TestHeap
                       # __stack__ << n
       n + fad(n - 1)  # __stack__ << 0
     end
-                      # if __stack__.empty?
-                      #   <return>
-                      # else
+                      #   <return>    # only present in original iseq
                       #   __iseq_id__ = __stack__.pop
                       #   n = __stack__.pop
                       #   if __iseq_id__ == 0
@@ -56,6 +54,27 @@ module TestHeap
     end
   end
 
+  def self.quarter(n)
+    if n < 4
+      n
+    else
+      q, r = n.divmod(4)
+      r + quarter(q) + quarter(q) + quarter(q) + quarter(q)
+    end
+  end
+
+  def self.broken_0(n = 0)
+    if n >= 10
+      raise "bad"
+    else
+      begin
+        broken_0(n.succ)
+      rescue Exception
+        :good
+      end
+    end
+  end
+
   def self.__block__(obj = :hi)     # TODO handle this
     if obj.nil?
       'nil'
@@ -72,6 +91,7 @@ num = 200_000
 ary = (0..99999).to_a
 
 puts TestHeap.fad(num)
+puts TestHeap.quarter(999_999)
 
 puts TestHeap.make_array(TestHeap.make_btree(ary)) == ary
 
