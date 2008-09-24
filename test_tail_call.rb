@@ -84,14 +84,14 @@ module TestFunc
     end
   end
 
-  def self.broken_1(n = 10)
-    if n <= 0
-      raise "12345"
+  def self.broken_1(n = 0)
+    if n >= 10
+      raise "bad"
     else
       begin
-        broken_1(n - 1)
+        broken_1(n.succ)
       rescue Exception
-        nil
+        :good
       end
     end
   end

@@ -63,12 +63,24 @@ module TestHeap
     end
   end
 
-  def self.broken_0(n = 0)
+  def self.broken_0(func = nil)
+    if func
+      c = 111
+      func.call
+    else
+      b = 5
+      c = 25
+      func = lambda do b + c end
+      broken_0(func)
+    end
+  end
+
+  def self.broken_1(n = 0)
     if n >= 10
       raise "bad"
     else
       begin
-        broken_0(n.succ)
+        broken_1(n.succ)
       rescue Exception
         :good
       end
