@@ -1,6 +1,3 @@
-# Pretty RBC
-# Copyright (c) 2008 Jeremy Roach
-# Licensed under The MIT License
 #
 # Library to dump and load compiled methods from within Rubinius.
 
