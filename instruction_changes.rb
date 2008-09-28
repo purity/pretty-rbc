@@ -35,6 +35,9 @@ end
 # ISSUES
 #   * if an instruction has two locals or two literals
 #     as arguments then a messy code change is required
+#   * try ic.iseq.insert(-1, *ary) if ic.insert(-1, ary)
+#     screws up indexes in @lines. in the last tuple
+#     in @lines, tup[1] often/always equals @iseq.length
 #
 class InstructionChanges
   attr_accessor :cm, :iseq, :literals, :local_names, :exceptions, :lines
@@ -168,10 +171,10 @@ class InstructionChanges
     k = self.next(i)
     raise "error: swap: no ins after 'i'" if k.nil?
 
-    size_i = k - i
-
     n = k.succ
-    n += 1 while n < @iseq.length and @iseq[n].kind_of? Integer
+    n += 1 while @iseq[n].kind_of? Integer
+
+    size_i = k - i
     size_k = n - k
 
     values_i = @iseq[i,size_i]
