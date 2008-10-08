@@ -185,10 +185,12 @@ class InstructionChanges
 
     x = i + size_k
 
-    @iseq.each_index do |n|
-      if at_goto? n
-        if @iseq[n.succ] == k
-          @iseq[n.succ] = x
+    if k != x
+      @iseq.each_index do |n|
+        if at_goto? n
+          if @iseq[n.succ] == k
+            @iseq[n.succ] = x
+          end
         end
       end
     end
