@@ -124,10 +124,10 @@ puts TestFunc.gross
 sum = lambda do |acc, num| acc + num end
 numbers = Array.new(1_000_000, 5)
 
-puts TestFunc.foldl(sum, 0, numbers) == numbers.inject(0) { |acc, num| acc + num }
+puts TestFunc.foldl(sum, 0, numbers) == numbers.inject(0, &sum)
 
 reverse = lambda do |acc, obj| acc.unshift(obj) end
 numbers = (0..9_999).to_a
 
-puts TestFunc.foldl(reverse, [], numbers) == numbers.inject([]) { |acc, obj| acc.unshift(obj) }
+puts TestFunc.foldl(reverse, [], numbers) == numbers.inject([], &reverse)
 

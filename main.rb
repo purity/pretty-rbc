@@ -1,12 +1,6 @@
 
 SELF_DIR = File.dirname(__FILE__) + '/'
 
-require "#{SELF_DIR}pcm.rb"
-require "#{SELF_DIR}instruction_changes.rb"
-require "#{SELF_DIR}self_tail_call.rb"
-require "#{SELF_DIR}heap_recursion.rb"
-require "#{SELF_DIR}playground.rb"
-
 module Main
 
   def self.infinite_dump_and_load_self
