@@ -1,0 +1,129 @@
+
+dst <- src
+
+0 = eax
+1 = ecx
+2 = edx
+3 = ebx
+4 = esp
+5 = ebp
+6 = esi
+7 = edi
+
+
+push ebp
+
+bits: 01010101
+desc: 0x50 + 5
+      opcode plus register
+
+
+mov ebp, esp
+
+bits: 10001011 11101100
+desc: 0x8B and (0b11 and 0b101 and 0b100)
+      opcode and (mode and destination register and source register)
+
+
+sub esp, 5
+
+bits: 10000001 11101100 00000101 00000000 00000000 00000000
+desc: 0x81 and (0b11 and 0b101 and 0b100) and 5
+      opcode and (mode and opcode extension and register) and 4-byte immediate
+
+
+mov ecx, 99
+
+bits: 10111001 01100011 00000000 00000000 00000000
+desc: 0xB8 + 1 and 99
+      (opcode plus register) and 4-byte immediate
+
+
+mov 1(esp), ecx
+
+bits: 10001001 10001100 00100100 00000001 00000000 00000000 00000000
+desc: 0x89 and (0b10 and 0b001 and 0b100) and (0b00 and 0b100 and 0b100) and 1
+      opcode and ((displacement and SIB flag) and source register and (displacement and SIB flag)) and
+        (no scale and no index register and base register) and 4-byte displacement
+
+
+add esp, 1
+
+bits: 10000001 11000100 00000001 00000000 00000000 00000000
+desc: 0x81 and (0b11 and 0b000 and 0b100) and 1
+      opcode and (mode and opcode extension and register) and 4-byte immediate
+
+
+pop eax
+
+bits: 01011000
+desc: 0x58 + 0
+      opcode plus register
+
+
+jmp DETOUR
+
+bits: 11101011 00001010
+desc: 0xEB and 10
+      short relative opcode and offset
+
+
+hlt
+
+bits: 11110100
+desc: 0xF4
+      opcode
+
+
+RESUME:
+
+mov ebx, 38    /* start_ptr + 38 */
+
+bits: 10111011 00100110 00000000 00000000 00000000
+desc: 0xB8 + 3 and 38
+      (opcode plus register) and 4-byte immediate
+
+
+jmp ebx
+
+bits: 11111111 11100011
+desc: 0xFF and (0b11 and 0b100 and 0b011)
+      near absolute opcode and (mode and opcode extension and register)
+
+
+leave
+
+bits: 11001001
+desc: 0xC9
+      opcode
+
+
+ret
+
+bits: 11000011
+desc: 0xC3
+      near return opcode
+
+
+DETOUR:
+
+cmp eax, 99
+
+bits: 10000001 11111001 01100011 00000000 00000000 00000000
+desc: 0x81 (0b11 and 0b111 and 0b001) and 99
+      opcode and (mode and opcode extension and register) and 4-byte immediate
+
+
+jz RESUME
+
+bits: 00001111 10000100 11101011 11111111 11111111 11111111
+desc: 0x0F84 and -21
+      near relative 2-byte opcode and 4-byte offset
+
+
+hlt
+
+bits: 11110100
+desc: 0xF4
+      opcode
+
