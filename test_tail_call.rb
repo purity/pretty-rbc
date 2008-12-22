@@ -25,6 +25,30 @@ module TestFunc
     end
   end
 
+  def self.clos(func = nil)
+    if func
+      c = 111
+      func.call
+    else
+      b = 5
+      c = 25
+      func = lambda do b + c == 30 end
+      clos(func)
+    end
+  end
+
+  def self.catch_self(n = 0)
+    if n >= 10
+      raise "bad"
+    else
+      begin
+        catch_self(n.succ)
+      rescue Exception
+        :good
+      end
+    end
+  end
+
   def self.yucky(a, b = 10)
     if b <= 0
       begin
@@ -72,27 +96,35 @@ module TestFunc
     end
   end
 
-  def self.broken_0(func = nil)
-    if func
-      c = 111
-      func.call
-    else
-      b = 5
-      c = 25
-      func = lambda do b + c end
-      broken_0(func)
-    end
+  # this doesn't run in constant space probably because block
+  # parameters aren't necessarily locals. BlockEnvironment#call seems
+  # to allocate a tuple from the general heap to hold
+  # the arguments that are passed to it
+  #
+  def self.not_optimized_0
+    z = lambda do |f, n|
+          if n <= 2
+            2
+          else
+            f.call(f, n - 1)
+          end
+        end
+    num = 4_000_000
+
+    z.call(z, num)
   end
 
-  def self.broken_1(n = 0)
-    if n >= 10
-      raise "bad"
+  def self.evil_eval(which)
+    mutate = 7531
+    case which
+    when :module_eval
+      Module.module_eval("if mutate == 7531; mutate = 6420; else; :bad; end")
+    when :instance_eval
+      "".instance_eval("if mutate == 7531; mutate = 6420; else; :bad; end")
+    when :eval
+      eval("if mutate == 7531; mutate = 6420; else; :bad; end")
     else
-      begin
-        broken_1(n.succ)
-      rescue Exception
-        :good
-      end
+      :bad
     end
   end
 
@@ -111,6 +143,42 @@ module TestFunc
   end
 end
 
+class Hi
+  def there(hello)
+    hello.there(self)
+  end
+end
+
+class Hello
+  attr_accessor :num
+
+  def there(hi)
+    if @num < 0
+      :okay
+    else
+      @num -= 1
+      hi.there(self)
+    end
+  end
+end
+
+immutable_first_local = :good
+
+puts TestFunc.evil_eval(:module_eval)
+puts immutable_first_local == :good
+puts TestFunc.evil_eval(:instance_eval)
+puts immutable_first_local == :good
+puts TestFunc.evil_eval(:eval)
+puts immutable_first_local == :good
+
+puts
+
+hi = Hi.new
+hello = Hello.new
+
+hello.num = 10_000_000
+puts hi.there(hello)
+
 
 
 num = 6_000_000
@@ -118,8 +186,8 @@ num = 6_000_000
 puts TestFunc.fib(num / 1_000) == TestFunc.fub(num / 1_000)
 
 puts TestFunc.to_two(num)
-puts TestFunc.yucky(num)
-puts TestFunc.gross
+puts TestFunc.clos
+puts TestFunc.catch_self
 
 sum = lambda do |acc, num| acc + num end
 numbers = Array.new(1_000_000, 5)

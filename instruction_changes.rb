@@ -1,38 +1,6 @@
 
-class Array
-
-  def to_tup
-    tup = Tuple.new(size)
-    each_index do |i|
-      tup[i] = self[i]
-    end
-    tup
-  end
-end
-
-class CompiledMethod
-
-  def all_methods(obj = self)
-    case obj
-    when CompiledMethod
-      cmethods = [obj]
-      obj.literals.each do |elem|
-        cmethods += all_methods(elem)
-      end
-      cmethods
-    else
-      []
-    end
-  end
-
-  def compile_all
-    all_methods.each do |cm|
-      cm.compile
-    end
-  end
-end
-
 # ISSUES
+#   * stack_size not automatically recalculated
 #   * if an instruction has two locals or two literals
 #     as arguments then a messy code change is required
 #   * try ic.iseq.insert(-1, *ary) if ic.insert(-1, ary)
@@ -40,46 +8,57 @@ end
 #     in @lines, tup[1] often/always equals @iseq.length
 #
 class InstructionChanges
-  attr_accessor :cm, :iseq, :literals, :local_names, :exceptions, :lines
+
+  attr_accessor :cm
+  attr_accessor :iseq
+  attr_accessor :literals
+  attr_accessor :local_names
+  attr_accessor :exceptions
+  attr_accessor :lines
+
   attr_accessor :immutable_gotos
+  attr_accessor :never_shrink
 
   GOTO_OFFSET = 100_000_000
 
   INSTRUCTIONS_WITH_LOCAL = {
-    :push_local => 0, :set_local => 0, :push_local_depth => 1,
-    :set_local_depth => 1, :set_local_from_fp => 0
+    :push_local => 0, :push_local_depth => 1, :set_local => 0,
+    :set_local_depth => 1
   }
 
   INSTRUCTIONS_WITH_LITERAL = {
-    :push_literal => 0, :set_ivar => 0, :push_ivar => 0,
-    :push_const => 0, :set_const => 0, :set_const_at => 0,
-    :find_const => 0, :attach_method => 0, :add_method => 0,
-    :open_class => 0, :open_class_under => 0, :open_module => 0,
-    :open_module_under => 0, :send_method => 0, :send_stack => 0,
-    :send_stack_with_block => 0, :send_with_arg_register => 0,
-    :send_super_stack_with_block => 0, :send_super_with_arg_register => 0,
-    :set_literal => 0, :check_serial => 0, :dummy => 1
+    :add_method => 0, :attach_method => 0, :check_serial => 0,
+    :create_block => 0, :find_const => 0, :open_class => 0,
+    :open_class_under => 0, :open_module => 0, :open_module_under => 0,
+    :push_const => 0, :push_ivar => 0, :push_literal => 0,
+    :send_method => 0, :send_stack => 0, :send_stack_with_block => 0,
+    :send_stack_with_splat => 0, :send_super_stack_with_block => 0,
+    :send_super_stack_with_splat => 0, :set_const => 0, :set_const_at => 0,
+    :set_ivar => 0, :set_literal => 0, :dummy => 1
   }
 
   def initialize(cm)
     @cm = cm
-    @iseq = cm.bytecodes.decode.flatten
+    @iseq = cm.iseq.decode.flatten
     @literals = cm.literals.to_a
     @local_names = cm.local_names.to_a
     @exceptions = cm.exceptions.to_a.map { |tup| tup.to_a }
     @lines = cm.lines.to_a.map { |tup| tup.to_a }
+
     @immutable_gotos = []
+    @never_shrink = true
   end
 
   def finalize
+    ic = InstructionChanges
     encoder = InstructionSequence::Encoder.new
-    layered_iseq = InstructionChanges.wrap(@iseq)
+    layered_iseq = ic.wrap(@iseq)
 
-    @cm.bytecodes = encoder.encode_stream(layered_iseq)
-    @cm.literals = @literals.to_tup
-    @cm.local_names = @local_names.to_tup
-    @cm.exceptions = @exceptions.map { |arr| arr.to_tup }.to_tup
-    @cm.lines = @lines.map { |arr| arr.to_tup }.to_tup
+    @cm.iseq = encoder.encode_stream(layered_iseq)
+    @cm.literals = ic.to_tup(@literals)
+    @cm.local_names = ic.to_tup(@local_names)
+    @cm.exceptions = ic.to_tup(@exceptions.map { |arr| ic.to_tup(arr) })
+    @cm.lines = ic.to_tup(@lines.map { |arr| ic.to_tup(arr) })
   end
 
   def at_goto?(i)
@@ -146,21 +125,41 @@ class InstructionChanges
       i += oldsize
     end
 
-    if ins_size
-      ins_size.times { @iseq.delete_at(i) }
-    elsif @iseq[i].kind_of? Integer
-      @iseq.delete_at(i)
+    if @never_shrink
+
+      if ins_size
+        k = i + ins_size
+        while i < k
+          @iseq[i] = :noop
+          i += 1
+        end
+      elsif @iseq[i].kind_of? Integer
+        @iseq[i] = :noop
+      else
+        k = i
+        while i == k or @iseq[i].kind_of? Integer
+          @iseq[i] = :noop
+          i += 1
+        end
+      end
     else
-      @iseq.delete_at(i)
-      @iseq.delete_at(i) while @iseq[i].kind_of? Integer
+
+      if ins_size
+        ins_size.times { @iseq.delete_at(i) }
+      elsif @iseq[i].kind_of? Integer
+        @iseq.delete_at(i)
+      else
+        @iseq.delete_at(i)
+        @iseq.delete_at(i) while @iseq[i].kind_of? Integer
+      end
+
+      newsize = @iseq.length
+      size_diff = oldsize - newsize
+
+      recalculate_gotos(:delete, i, size_diff)
+      recalculate_exceptions(:delete, i, size_diff)
+      recalculate_lines(:delete, i, size_diff)
     end
-
-    newsize = @iseq.length
-    size_diff = oldsize - newsize
-
-    recalculate_gotos(:delete, i, size_diff)
-    recalculate_exceptions(:delete, i, size_diff)
-    recalculate_lines(:delete, i, size_diff)
   end
 
   def swap(i)
@@ -183,9 +182,9 @@ class InstructionChanges
     replace(i, *values_k)
     replace(i + size_k, *values_i)
 
-    x = i + size_k
+    if size_i != size_k
+      x = i + size_k
 
-    if k != x
       @iseq.each_index do |n|
         if at_goto? n
           if @iseq[n.succ] == k
@@ -193,10 +192,10 @@ class InstructionChanges
           end
         end
       end
-    end
 
-    recalculate_exceptions(:swap, i, size_i + size_k)
-    recalculate_lines(:swap, i, size_i + size_k)
+      recalculate_exceptions(:swap, i, size_i + size_k)
+      recalculate_lines(:swap, i, size_i + size_k)
+    end
   end
 
   def recalculate_gotos(action, i, size_diff)
@@ -372,7 +371,8 @@ class InstructionChanges
     while n < @lines.length
       first, last, other = @lines[n]
 
-      if first > last
+      # why can these be nil?
+      if first.nil? or last.nil? or first > last
         @lines.delete_at(n)
         next
       end
@@ -448,21 +448,6 @@ class InstructionChanges
     end
   end
 
-  def insert_literal(i, values)
-    oldsize = @literals.length
-
-    if i < 0
-      i += oldsize.succ
-    end
-
-    @literals.insert(i, *values)
-
-    newsize = @literals.length
-    size_diff = newsize - oldsize
-
-    recalculate_literals(:insert, i, size_diff)
-  end
-
   def delete_literal(i, num_del = 1)
     oldsize = @literals.length
 
@@ -486,16 +471,12 @@ class InstructionChanges
 
       if arg_idx = at_ins_with_literal?(n)
         x = @iseq[n.succ + arg_idx]
-        case action
-        when :delete
+        #case action
+        #when :delete
           if x > k
             @iseq[n.succ + arg_idx] = x - size_diff
           end
-        when :insert
-          if x >= i
-            @iseq[n.succ + arg_idx] = x + size_diff
-          end
-        end
+        #end
       end
     end
   end
@@ -551,12 +532,22 @@ class InstructionChanges
     end
   end
 
+  def self.to_tup(ary)
+    tup = Tuple.new(ary.size)
+    ary.each_index do |i|
+      tup[i] = ary[i]
+    end
+    tup
+  end
+
   def test
 
     encoder = InstructionSequence::Encoder.new
     cm = CompiledMethod.new
-    cm.bytecodes = encoder.encode_stream([[:passed_arg, 10], [:push_true]])
+    cm.iseq = encoder.encode_stream([[:passed_arg, 10], [:push_true]])
+
     ic = InstructionChanges.new(cm)
+    ic.never_shrink = false
 
     ic.iseq = [:foo, 10, :hi]
     ic.literals = []
@@ -748,20 +739,8 @@ class InstructionChanges
     raise "fail 50" unless ic.exceptions == [[8, 9, 10]]
     raise "fail 51" unless ic.lines == [[9, 10, 50]]
 
-    ic.iseq = [:push_literal, 2, :goto, 4, :foo, :dummy, 99, 3]
-    ic.literals = [:hello, :hi, :hey, :howdy]
-
-    ic.insert_literal(2, [:oh, :no])
-    raise "fail 52" unless ic.iseq == [:push_literal, 4, :goto, 4, :foo, :dummy, 99, 5]
-    raise "fail 53" unless ic.literals == [:hello, :hi, :oh, :no, :hey, :howdy]
-
-    ic.insert_literal(-1, [:foo])
-    raise "fail 54" unless ic.iseq == [:push_literal, 4, :goto, 4, :foo, :dummy, 99, 5]
-    raise "fail 55" unless ic.literals == [:hello, :hi, :oh, :no, :hey, :howdy, :foo]
-
-    ic.insert_literal(0, [:blah])
-    raise "fail 56" unless ic.iseq == [:push_literal, 5, :goto, 4, :foo, :dummy, 99, 6]
-    raise "fail 57" unless ic.literals == [:blah, :hello, :hi, :oh, :no, :hey, :howdy, :foo]
+    ic.iseq = [:push_literal, 5, :goto, 4, :foo, :dummy, 99, 6]
+    ic.literals = [:blah, :hello, :hi, :oh, :no, :hey, :howdy, :foo]
 
     ic.delete_literal(1, 2)
     raise "fail 58" unless ic.iseq == [:push_literal, 3, :goto, 4, :foo, :dummy, 99, 4]
@@ -876,6 +855,15 @@ class InstructionChanges
     raise "fail 82.0" unless ic.iseq == [:goto, 2, :hi]
     raise "fail 82.1" unless ic.exceptions == [[0, 1, 2]]
     raise "fail 82.2" unless ic.lines == [[0, 2, 5]]
+
+    ic.iseq = [:push_true]
+
+    ic.finalize
+    raise "fail 83.0" unless ic.cm.iseq.instance_of? InstructionSequence
+    raise "fail 83.1" unless ic.cm.literals.instance_of? Tuple
+    raise "fail 83.2" unless ic.cm.local_names.instance_of? Tuple
+    raise "fail 83.3" unless ic.cm.exceptions.instance_of? Tuple
+    raise "fail 83.4" unless ic.cm.lines.instance_of? Tuple
   end
 end
 

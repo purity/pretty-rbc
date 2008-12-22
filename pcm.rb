@@ -1,9 +1,5 @@
-#
-# Library to dump and load compiled methods from within Rubinius.
 
 module PrettyCM
-
-  VERSION = '0.5'
 
   NEWLINE = "\n"
   TAB = "\x20\x20"
@@ -113,23 +109,23 @@ module PrettyCM
       out << "#{NEWLINE + tabs}" unless depth == 0
       out << "CompiledMethod 17"
       depth += 1
+      out << dump(obj.hints, depth)
       out << dump(obj.__ivars__, depth)
       out << dump(obj.primitive, depth)
-      out << dump(obj.required, depth)
-      out << dump(obj.serial, depth)
-      out << dump(obj.bytecodes, depth)
       out << dump(obj.name, depth)
-      out << dump(obj.file, depth)
+      out << dump(obj.iseq, depth)
+      out << dump(obj.stack_size, depth)
       out << dump(obj.local_count, depth)
+      out << dump(obj.required_args, depth)
+      out << dump(obj.total_args, depth)
+      out << dump(obj.splat, depth)
       out << dump(obj.literals, depth)
-      out << dump(obj.args, depth)
-      out << dump(obj.local_names, depth)
       out << dump(obj.exceptions, depth)
       out << dump(obj.lines, depth)
-      out << dump(obj.path, depth)
-      out << dump(obj.metadata_container, depth)
-      out << dump(obj.compiled, depth)
-      out << dump(obj.staticscope, depth)
+      out << dump(obj.file, depth)
+      out << dump(obj.local_names, depth)
+      out << dump(obj.scope, depth)
+      out << dump(obj.serial, depth)
     when NilClass
       out << "#{NEWLINE + tabs}Nil"
     when TrueClass
@@ -190,6 +186,10 @@ module PrettyCM
     when Module
       str = apply_escape_codes(obj.name)
       out << "#{NEWLINE + tabs}Module \"#{str}\""
+    when Regexp
+      src = apply_escape_codes(obj.source)
+      opt = obj.options
+      out << "#{NEWLINE + tabs}Regexp \"#{src}\" #{opt}"
     else
       raise "error: PrettyCM.dump: unknown object type '#{obj.class}'"
     end
@@ -220,23 +220,23 @@ module PrettyCM
     when 'CompiledMethod'
       cm = CompiledMethod.new
       useless                 = load(str, tokens)
-      useless                 = load(str, tokens)
+      cm.hints                = load(str, tokens)
+      cm.__ivars__            = load(str, tokens)
       cm.primitive            = load(str, tokens)
-      cm.required             = load(str, tokens)
-      cm.serial               = load(str, tokens)
-      cm.bytecodes            = load(str, tokens)
       cm.name                 = load(str, tokens)
-      cm.file                 = load(str, tokens)
+      cm.iseq                 = load(str, tokens)
+      cm.stack_size           = load(str, tokens)
       cm.local_count          = load(str, tokens)
+      cm.required_args        = load(str, tokens)
+      cm.total_args           = load(str, tokens)
+      cm.splat                = load(str, tokens)
       cm.literals             = load(str, tokens)
-      cm.args                 = load(str, tokens)
-      cm.local_names          = load(str, tokens)
       cm.exceptions           = load(str, tokens)
       cm.lines                = load(str, tokens)
-      cm.path                 = load(str, tokens)
-      cm.metadata_container   = load(str, tokens)
-      useless                 = load(str, tokens)
-      useless                 = load(str, tokens)
+      cm.file                 = load(str, tokens)
+      cm.local_names          = load(str, tokens)
+      cm.scope                = load(str, tokens)
+      cm.serial               = load(str, tokens)
       cm
     when 'Nil'
       nil
@@ -303,6 +303,10 @@ module PrettyCM
     when 'Class', 'Module'
       useless = load(str, tokens)
       nil
+    when 'Regexp'
+      src = load(str, tokens)
+      opt = load(str, tokens)
+      Regexp.new(src, opt)
     when 'NaN'
       0.0 / 0.0
     when 'Infinity'

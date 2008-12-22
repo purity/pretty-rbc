@@ -100,14 +100,14 @@ module TestHeap
 end
 
 num = 200_000
-ary = (0..99999).to_a
+ary = (0..399999).to_a
 
-puts TestHeap.fad(num)
-puts TestHeap.quarter(999_999)
+#puts TestHeap.fad(num)
+#puts TestHeap.quarter(999_999)
 
 puts TestHeap.make_array(TestHeap.make_btree(ary)) == ary
 
-puts TestHeap.fib(20)
+#puts TestHeap.fib(20)
 
 #puts TestHeap.__block__
 

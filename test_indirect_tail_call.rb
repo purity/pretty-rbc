@@ -82,7 +82,7 @@ tg = TestGoto.new
 
 arr = [:hello, [:no, 42, [[], :yes, 15, []]], 10]
 
-#arr << Array.new(1_000, Array.new(10, :foo))
+arr << Array.new(1_000, Array.new(10, :foo))
 
-puts tg.dump(arr)
+puts tg.dump(arr)[0..129]
 

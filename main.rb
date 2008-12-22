@@ -1,6 +1,9 @@
 
 SELF_DIR = File.dirname(__FILE__) + '/'
 
+require "#{SELF_DIR}pcm.rb"
+#require "#{SELF_DIR}instruction_changes.rb"
+
 module Main
 
   def self.infinite_dump_and_load_self
@@ -55,7 +58,6 @@ module Main
   def self.run_tail_call
 
     cm = Compile.compile_file("#{SELF_DIR}test_tail_call.rb")
-    SelfTailCall.optimize(cm)
     #str = PrettyCM.dump(cm)
     #PrettyCM.write_file("#{SELF_DIR}test_tail_call.pcm", str)
 
@@ -63,32 +65,20 @@ module Main
 
     puts
 
-    #cm = Compile.compile_file("#{SELF_DIR}test_indirect_tail_call.rb")
-    #TailCall.optimize(cm)
+    cm = Compile.compile_file("#{SELF_DIR}test_indirect_tail_call.rb")
     #str = PrettyCM.dump(cm)
     #PrettyCM.write_file("#{SELF_DIR}test_indirect_tail_call.pcm", str)
-
-    #cm.as_script
-  end
-
-  def self.run_heap_recursion
-
-    cm = Compile.compile_file("#{SELF_DIR}test_heap_recursion.rb")
-    HeapRecursion.optimize(cm)
-    #str = PrettyCM.dump(cm)
-    #PrettyCM.write_file("#{SELF_DIR}test_heap_recursion.pcm", str)
 
     cm.as_script
   end
 end
 
-cm = MethodContext.current.method
-ic = InstructionChanges.new(cm)
-ic.test
+#cm = MethodContext.current.method
+#ic = InstructionChanges.new(cm)
+#ic.test
 
 #Main.infinite_dump_and_load_self
+
 #Main.dump_others
 
-Main.run_tail_call
-Main.run_heap_recursion
 
