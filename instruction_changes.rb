@@ -16,7 +16,7 @@ class InstructionChanges
   attr_accessor :exceptions
   attr_accessor :lines
 
-  attr_accessor :immutable_gotos
+  attr_accessor :immutable_iseq_refs
   attr_accessor :never_shrink
 
   GOTO_OFFSET = 100_000_000
@@ -45,24 +45,25 @@ class InstructionChanges
     @exceptions = cm.exceptions.to_a.map { |tup| tup.to_a }
     @lines = cm.lines.to_a.map { |tup| tup.to_a }
 
-    @immutable_gotos = []
+    @immutable_iseq_refs = []
     @never_shrink = true
   end
 
   def finalize
-    ic = InstructionChanges
+    icc = InstructionChanges
     encoder = InstructionSequence::Encoder.new
-    layered_iseq = ic.wrap(@iseq)
+    layered_iseq = icc.wrap(@iseq)
 
     @cm.iseq = encoder.encode_stream(layered_iseq)
-    @cm.literals = ic.to_tup(@literals)
-    @cm.local_names = ic.to_tup(@local_names)
-    @cm.exceptions = ic.to_tup(@exceptions.map { |arr| ic.to_tup(arr) })
-    @cm.lines = ic.to_tup(@lines.map { |arr| ic.to_tup(arr) })
+    @cm.literals = icc.to_tup(@literals)
+    @cm.local_names = icc.to_tup(@local_names)
+    @cm.exceptions = icc.to_tup(@exceptions.map { |arr| icc.to_tup(arr) })
+    @cm.lines = icc.to_tup(@lines.map { |arr| icc.to_tup(arr) })
   end
 
-  def at_goto?(i)
-    [:goto, :goto_if_true, :goto_if_false, :goto_if_defined].include? @iseq[i]
+  def at_ins_with_iseq_ref?(i)
+    [:goto, :goto_if_true, :goto_if_false,
+     :goto_if_defined, :setup_unwind].include? @iseq[i]
   end
 
   def at_ins_with_local?(i)
@@ -102,7 +103,7 @@ class InstructionChanges
     newsize = @iseq.length
     size_diff = newsize - oldsize
 
-    recalculate_gotos(:insert, i, size_diff)
+    recalculate_iseq_refs(:insert, i, size_diff)
     recalculate_exceptions(:insert, i, size_diff)
     recalculate_lines(:insert, i, size_diff)
   end
@@ -156,7 +157,7 @@ class InstructionChanges
       newsize = @iseq.length
       size_diff = oldsize - newsize
 
-      recalculate_gotos(:delete, i, size_diff)
+      recalculate_iseq_refs(:delete, i, size_diff)
       recalculate_exceptions(:delete, i, size_diff)
       recalculate_lines(:delete, i, size_diff)
     end
@@ -186,7 +187,7 @@ class InstructionChanges
       x = i + size_k
 
       @iseq.each_index do |n|
-        if at_goto? n
+        if at_ins_with_iseq_ref? n
           if @iseq[n.succ] == k
             @iseq[n.succ] = x
           end
@@ -198,15 +199,15 @@ class InstructionChanges
     end
   end
 
-  def recalculate_gotos(action, i, size_diff)
+  def recalculate_iseq_refs(action, i, size_diff)
     return if size_diff == 0
     k = i + (size_diff - 1)
 
     @iseq.each_index do |n|
 
-      if at_goto? n
+      if at_ins_with_iseq_ref? n
         x = @iseq[n.succ]
-        unless @immutable_gotos.include? x
+        unless @immutable_iseq_refs.include? x
           case action
           when :delete
             if normalized_goto(x) > k
@@ -226,26 +227,26 @@ class InstructionChanges
     @iseq += @iseq[range]
   end
 
-  def offset_gotos(range)
+  def offset_iseq_refs(range)
     first_index = range.first
 
     for i in range
-      if at_goto? i
+      if at_ins_with_iseq_ref? i
         k = @iseq[i.succ]
-        unless @immutable_gotos.include? k
+        unless @immutable_iseq_refs.include? k
           @iseq[i.succ] = k + first_index + GOTO_OFFSET
         end
       end
     end
   end
 
-  # use after offset_gotos + delete/insert
+  # use after offset_iseq_refs + delete/insert
   #
-  def normalize_gotos
+  def normalize_iseq_refs
 
     @iseq.each_index do |i|
 
-      if at_goto? i
+      if at_ins_with_iseq_ref? i
         k = @iseq[i.succ]
         @iseq[i.succ] = normalized_goto(k)
       end
@@ -613,9 +614,9 @@ class InstructionChanges
       ic.iseq == [:goto, 2, :foo, :hi, :goto, 3, :goto_if_false, 4, :where, :goto, 8,
                   :goto, 2, :foo, :hi, :goto, 3, :goto_if_false, 11, :where, :goto, 8]
 
-    ic.immutable_gotos = [11]
-    ic.offset_gotos(11..21)
-    ic.normalize_gotos
+    ic.immutable_iseq_refs = [11]
+    ic.offset_iseq_refs(11..21)
+    ic.normalize_iseq_refs
     raise "fail 18" unless
       ic.iseq == [:goto, 2, :foo, :hi, :goto, 3, :goto_if_false, 4, :where, :goto, 8,
                   :goto, 13, :foo, :hi, :goto, 14, :goto_if_false, 11, :where, :goto, 19]
@@ -624,14 +625,14 @@ class InstructionChanges
     raise "fail 19" unless ic.previous(0).nil?
     raise "fail 20" unless ic.next(2).nil?
 
-    ic.immutable_gotos = [6]
+    ic.immutable_iseq_refs = [6]
     ic.iseq = [:goto, 3, :hello, :hi, :goto_if_true, 6, :foo, :when]
 
     ic.delete(2)
     raise "fail 21" unless
       ic.iseq == [:goto, 2, :hi, :goto_if_true, 6, :foo, :when]
 
-    ic.immutable_gotos = []
+    ic.immutable_iseq_refs = []
     ic.iseq = [:here, 5, :where, 10]
     ic.replace(1, 8, :when)
     raise "fail 22" unless ic.iseq == [:here, 8, :when, 10]
@@ -644,11 +645,11 @@ class InstructionChanges
       InstructionChanges.wrap(ic.iseq) == [[:hi, 1], [:why, 10], [:foo]]
 
     ic.iseq = [:goto, 2, :here, :foo, 10, :goto, 7, :what]
-    ic.offset_gotos(0..7)
+    ic.offset_iseq_refs(0..7)
     ic.delete(3)
     ic.insert(3, [:foo])
     ic.insert(0, [:huh])
-    ic.normalize_gotos
+    ic.normalize_iseq_refs
     raise "fail 24.1" unless ic.iseq == [:huh, :goto, 3, :here, :foo, :goto, 7, :what]
 
     ic.iseq = [:a, :b, :c, :d, :e, :f, :g, :h, :i, :j, :k, :l,
@@ -822,14 +823,14 @@ class InstructionChanges
 
     # why goto denormalization-normalization is needed.
     # in this example the first goto's argument should be frozen since it's equal
-    # to a number in @immutable_gotos at the time @immutable_gotos is set.
+    # to a number in @immutable_iseq_refs at the time @immutable_iseq_refs is set.
     # other goto arguments should be modifiable even if they equal a number in
-    # @immutable_gotos after an offset_gotos modification.
+    # @immutable_iseq_refs after an offset_iseq_refs modification.
 
-    ic.immutable_gotos = [6]
+    ic.immutable_iseq_refs = [6]
     ic.iseq = [:goto, 6, :foo, :hello, :goto, 2, :hi, :what]
 
-    ic.offset_gotos(4..7)
+    ic.offset_iseq_refs(4..7)
     raise "fail 77" unless
       ic.iseq == [:goto, 6, :foo, :hello, :goto, GOTO_OFFSET + 6, :hi, :what]
 
@@ -837,7 +838,7 @@ class InstructionChanges
     raise "fail 78" unless
       ic.iseq == [:goto, 6, :foo, :goto, GOTO_OFFSET + 5, :hi, :what]
 
-    ic.normalize_gotos
+    ic.normalize_iseq_refs
     raise "fail 79" unless ic.iseq == [:goto, 6, :foo, :goto, 5, :hi, :what]
 
     ic.iseq = [:hello, 3, :foo, :hi, 2, :what]

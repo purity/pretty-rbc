@@ -2,7 +2,8 @@
 SELF_DIR = File.dirname(__FILE__) + '/'
 
 require "#{SELF_DIR}pcm.rb"
-#require "#{SELF_DIR}instruction_changes.rb"
+require "#{SELF_DIR}instruction_changes.rb"
+require "#{SELF_DIR}self_tail_call.rb"
 
 module Main
 
@@ -58,27 +59,27 @@ module Main
   def self.run_tail_call
 
     cm = Compile.compile_file("#{SELF_DIR}test_tail_call.rb")
-    #str = PrettyCM.dump(cm)
-    #PrettyCM.write_file("#{SELF_DIR}test_tail_call.pcm", str)
+    SelfTailCall.optimize(cm)
+    str = PrettyCM.dump(cm)
+    PrettyCM.write_file("#{SELF_DIR}test_tail_call.pcm", str)
 
     cm.as_script
 
-    puts
+    #puts
 
-    cm = Compile.compile_file("#{SELF_DIR}test_indirect_tail_call.rb")
+    #cm = Compile.compile_file("#{SELF_DIR}test_indirect_tail_call.rb")
     #str = PrettyCM.dump(cm)
     #PrettyCM.write_file("#{SELF_DIR}test_indirect_tail_call.pcm", str)
 
-    cm.as_script
+    #cm.as_script
   end
 end
 
-#cm = MethodContext.current.method
-#ic = InstructionChanges.new(cm)
-#ic.test
+cm = MethodContext.current.method
+ic = InstructionChanges.new(cm)
+ic.test
 
 #Main.infinite_dump_and_load_self
-
+#Main.run_tail_call
 #Main.dump_others
-
 

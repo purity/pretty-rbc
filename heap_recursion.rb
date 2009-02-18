@@ -1,6 +1,19 @@
 
 module HeapRecursion
 
+  def self.all_methods(obj)
+    case obj
+    when CompiledMethod
+      cmethods = [obj]
+      obj.literals.each do |o|
+        cmethods += all_methods(o)
+      end
+      cmethods
+    else
+      []
+    end
+  end
+
   def self.call_to_goto(ic, idx, ins_size)
     if ins_size >= 2
       ic.replace(idx, :goto, 99999)
@@ -69,7 +82,7 @@ module HeapRecursion
     i = static_gotos.first
 
     while i
-      if ic.iseq[i] == :sret
+      if ic.iseq[i] == :ret
         ic.delete(i)
       else
         i = ic.next(i)
@@ -183,7 +196,7 @@ module HeapRecursion
     loop do
 
       idx_call, ins_size, num_args = find_call(ic, k)
-      idx_ret = find_instruction(ic, :sret, k)
+      idx_ret = find_instruction(ic, :ret, k)
 
       if idx_call.nil? and (rec_calls.empty? or idx_ret.nil?)
         break
@@ -256,7 +269,7 @@ module HeapRecursion
 
     i = 0
     while i
-      if ic.iseq[i] == :sret
+      if ic.iseq[i] == :ret
         k = i.succ
         while k
           if iseq_id == iseq_count
@@ -309,6 +322,8 @@ module HeapRecursion
     delete_return_instructions(ic, static_gotos)
     insert_init_stack(ic)
     insert_send_sites(ic)
+
+    ic.finalize
   end
 
   def self.find_call(ic, start_at = 0)
@@ -348,11 +363,12 @@ module HeapRecursion
 
   def self.optimize(cm_main)
 
-    for cm in cm_main.all_methods
+    for cm in all_methods(cm_main)
       ic = InstructionChanges.new(cm)
       modify_instructions(ic)
-      ic.finalize
     end
+
+    cm_main
   end
 end
 

@@ -1,10 +1,23 @@
 
 module SelfTailCall
 
-  def self.call_to_goto(ic, index, ins_size)
+  def self.all_methods(obj)
+    case obj
+    when CompiledMethod
+      cmethods = [obj]
+      obj.literals.each do |o|
+        cmethods += all_methods(o)
+      end
+      cmethods
+    else
+      []
+    end
+  end
+
+  def self.call_to_goto(ic, idx, ins_size)
     if ins_size >= 2
-      ic.replace(index, :goto, 99999)
-      ic.delete(index + 2, ins_size - 2)
+      ic.replace(idx, :goto, 99999)
+      ic.delete(idx + 2, ins_size - 2)
     else
       raise "error: call_to_goto: small ins_size"
     end
@@ -16,13 +29,27 @@ module SelfTailCall
     end
   end
 
+  def self.modify_original_iseq(ic)
+
+    tail_calls = []
+    idx, ins_size, num_args = find(ic)
+
+    until idx.nil?
+      tail_calls << [idx, num_args]
+      call_to_goto(ic, idx, ins_size)
+      idx, ins_size, num_args = find(ic, idx)
+    end
+
+    tail_calls
+  end
+
   def self.modify_iseq_copy(ic, num_args, uniq_arg_counts, original_lengths)
 
     len_orig_iseq, len_orig_exc, len_orig_lines = original_lengths
 
-    ic.immutable_gotos = []
+    ic.immutable_iseq_refs = []
     uniq_arg_counts.each_value do |v|
-      ic.immutable_gotos << v
+      ic.immutable_iseq_refs << v
     end
 
     len_iseq = ic.iseq.length
@@ -30,7 +57,7 @@ module SelfTailCall
     len_lines = ic.lines.length
 
     ic.duplicate_iseq(0...len_orig_iseq)
-    ic.offset_gotos(len_iseq...ic.iseq.length)
+    ic.offset_iseq_refs(len_iseq...ic.iseq.length)
 
     ic.duplicate_exceptions(0...len_orig_exc)
     ic.offset_exceptions(len_exc...ic.exceptions.length, len_iseq)
@@ -57,10 +84,15 @@ module SelfTailCall
       i = ic.next(i)
     end
 
-    ic.normalize_gotos
+    ic.normalize_iseq_refs
   end
 
-  def self.modify_instructions(ic, tail_calls)
+  def self.modify_instructions(ic)
+
+    tail_calls = modify_original_iseq(ic)
+
+    return if tail_calls.empty?
+
     arg_counts = get_arg_counts(tail_calls)
     uniq_arg_counts = {}
 
@@ -70,13 +102,12 @@ module SelfTailCall
 
     original_lengths = [len_orig_iseq, len_orig_exc, len_orig_lines]
 
-    tail_calls.each do |info|
-      index, num_args = info
+    tail_calls.each do |(idx, num_args)|
       if uniq_arg_counts[num_args]
-        ic.iseq[index.succ] = uniq_arg_counts[num_args]
+        ic.iseq[idx.succ] = uniq_arg_counts[num_args]
       else
         uniq_arg_counts[num_args] = ic.iseq.length
-        ic.iseq[index.succ] = uniq_arg_counts[num_args]
+        ic.iseq[idx.succ] = uniq_arg_counts[num_args]
         modify_iseq_copy(ic, num_args, uniq_arg_counts, original_lengths)
       end
     end
@@ -88,13 +119,15 @@ module SelfTailCall
     arg_counts.uniq.each do |num_args|
       modify_iseq_copy(ic, num_args, uniq_arg_counts, original_lengths)
     end
+
+    ic.finalize
   end
 
   def self.to_return?(iseq, k)
     case iseq[k]
     when :goto
       to_return?(iseq, iseq[k.succ])
-    when :sret
+    when :ret
       true
     else
       false
@@ -126,22 +159,12 @@ module SelfTailCall
 
   def self.optimize(cm_main)
 
-    for cm in cm_main.all_methods
-      tail_calls = []
+    for cm in all_methods(cm_main)
       ic = InstructionChanges.new(cm)
-      index, ins_size, num_args = find(ic)
-
-      unless index.nil?
-        until index.nil?
-          tail_calls << [index, num_args]
-          call_to_goto(ic, index, ins_size)
-          index, ins_size, num_args = find(ic, index)
-        end
-
-        modify_instructions(ic, tail_calls)
-        ic.finalize
-      end
+      modify_instructions(ic)
     end
+
+    cm_main
   end
 end
 

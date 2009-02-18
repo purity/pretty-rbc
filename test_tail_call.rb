@@ -162,22 +162,22 @@ class Hello
   end
 end
 
-immutable_first_local = :good
+#immutable_first_local = :good
 
-puts TestFunc.evil_eval(:module_eval)
-puts immutable_first_local == :good
-puts TestFunc.evil_eval(:instance_eval)
-puts immutable_first_local == :good
-puts TestFunc.evil_eval(:eval)
-puts immutable_first_local == :good
+#puts TestFunc.evil_eval(:module_eval)
+#puts immutable_first_local == :good
+#puts TestFunc.evil_eval(:instance_eval)
+#puts immutable_first_local == :good
+#puts TestFunc.evil_eval(:eval)
+#puts immutable_first_local == :good
 
-puts
+#puts
 
-hi = Hi.new
-hello = Hello.new
+#hi = Hi.new
+#hello = Hello.new
 
-hello.num = 10_000_000
-puts hi.there(hello)
+#hello.num = 10_000_000
+#puts hi.there(hello)
 
 
 
