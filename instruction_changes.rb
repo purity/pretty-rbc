@@ -19,7 +19,7 @@ class InstructionChanges
   attr_accessor :immutable_iseq_refs
   attr_accessor :never_shrink
 
-  GOTO_OFFSET = 100_000_000
+  ISEQ_REF_OFFSET = 100_000_000
 
   INSTRUCTIONS_WITH_LOCAL = {
     :push_local => 0, :push_local_depth => 1, :set_local => 0,
@@ -210,11 +210,11 @@ class InstructionChanges
         unless @immutable_iseq_refs.include? x
           case action
           when :delete
-            if normalized_goto(x) > k
+            if normalized_iseq_ref(x) > k
               @iseq[n.succ] = x - size_diff
             end
           when :insert
-            if normalized_goto(x) >= i and (n < i or n > k)
+            if normalized_iseq_ref(x) >= i and (n < i or n > k)
               @iseq[n.succ] = x + size_diff
             end
           end
@@ -234,7 +234,7 @@ class InstructionChanges
       if at_ins_with_iseq_ref? i
         k = @iseq[i.succ]
         unless @immutable_iseq_refs.include? k
-          @iseq[i.succ] = k + first_index + GOTO_OFFSET
+          @iseq[i.succ] = k + first_index + ISEQ_REF_OFFSET
         end
       end
     end
@@ -248,14 +248,14 @@ class InstructionChanges
 
       if at_ins_with_iseq_ref? i
         k = @iseq[i.succ]
-        @iseq[i.succ] = normalized_goto(k)
+        @iseq[i.succ] = normalized_iseq_ref(k)
       end
     end
   end
 
-  def normalized_goto(num)
-    if num - GOTO_OFFSET >= 0
-      num - GOTO_OFFSET
+  def normalized_iseq_ref(num)
+    if num - ISEQ_REF_OFFSET >= 0
+      num - ISEQ_REF_OFFSET
     else
       num
     end
@@ -832,11 +832,11 @@ class InstructionChanges
 
     ic.offset_iseq_refs(4..7)
     raise "fail 77" unless
-      ic.iseq == [:goto, 6, :foo, :hello, :goto, GOTO_OFFSET + 6, :hi, :what]
+      ic.iseq == [:goto, 6, :foo, :hello, :goto, ISEQ_REF_OFFSET + 6, :hi, :what]
 
     ic.delete(3)
     raise "fail 78" unless
-      ic.iseq == [:goto, 6, :foo, :goto, GOTO_OFFSET + 5, :hi, :what]
+      ic.iseq == [:goto, 6, :foo, :goto, ISEQ_REF_OFFSET + 5, :hi, :what]
 
     ic.normalize_iseq_refs
     raise "fail 79" unless ic.iseq == [:goto, 6, :foo, :goto, 5, :hi, :what]
