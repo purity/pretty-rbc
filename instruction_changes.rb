@@ -39,6 +39,11 @@ class InstructionChanges
     :push_const_fast => true
   }
 
+  INSTRUCTIONS_WITH_ISEQ_REF = {
+    :goto => true, :goto_if_true => true, :goto_if_false => true,
+    :goto_if_defined => true, :setup_unwind => true
+  }
+
   def initialize(cm)
     @cm = cm
     @iseq = cm.iseq.decode.flatten
@@ -64,8 +69,7 @@ class InstructionChanges
   end
 
   def at_ins_with_iseq_ref?(i)
-    [:goto, :goto_if_true, :goto_if_false,
-     :goto_if_defined, :setup_unwind].include? @iseq[i]
+    INSTRUCTIONS_WITH_ISEQ_REF[@iseq[i]]
   end
 
   def at_ins_with_local?(i)
