@@ -1,8 +1,6 @@
 
 # ISSUES
 #   * stack_size not automatically recalculated
-#   * if an instruction has two locals or two literals
-#     as arguments then a messy code change is required
 #   * try ic.iseq.insert(-1, *ary) if ic.insert(-1, ary)
 #     screws up indexes in @lines. in the last tuple
 #     in @lines, tup[1] often/always equals @iseq.length
@@ -35,6 +33,10 @@ class InstructionChanges
     :send_stack_with_splat => 0, :send_super_stack_with_block => 0,
     :send_super_stack_with_splat => 0, :set_const => 0, :set_const_at => 0,
     :set_ivar => 0, :set_literal => 0, :dummy => 1
+  }
+
+  INSTRUCTIONS_WITH_LITERALS = {
+    :push_const_fast => true
   }
 
   def initialize(cm)
@@ -72,6 +74,10 @@ class InstructionChanges
 
   def at_ins_with_literal?(i)
     INSTRUCTIONS_WITH_LITERAL[@iseq[i]]
+  end
+
+  def at_ins_with_literals?(i)
+    INSTRUCTIONS_WITH_LITERALS[@iseq[i]]
   end
 
   def previous(i)
@@ -465,19 +471,29 @@ class InstructionChanges
   end
 
   def recalculate_literals(action, i, size_diff)
-    return if size_diff == 0
+
+    if size_diff == 0 or action != :delete
+      return
+    end
+
     k = i + (size_diff - 1)
 
     @iseq.each_index do |n|
 
       if arg_idx = at_ins_with_literal?(n)
         x = @iseq[n.succ + arg_idx]
-        #case action
-        #when :delete
-          if x > k
-            @iseq[n.succ + arg_idx] = x - size_diff
-          end
-        #end
+        if x > k
+          @iseq[n.succ + arg_idx] = x - size_diff
+        end
+      elsif at_ins_with_literals?(n)
+        x0 = @iseq[n.succ]
+        x1 = @iseq[n.succ.succ]
+        if x0 > k
+          @iseq[n.succ] = x0 - size_diff
+        end
+        if x1 > k
+          @iseq[n.succ.succ] = x1 - size_diff
+        end
       end
     end
   end
@@ -486,6 +502,9 @@ class InstructionChanges
     for i in range
       if arg_idx = at_ins_with_literal?(i)
         @iseq[i.succ + arg_idx] += offset
+      elsif at_ins_with_literals?(i)
+        @iseq[i.succ] += offset
+        @iseq[i.succ.succ] += offset
       end
     end
   end
@@ -740,28 +759,38 @@ class InstructionChanges
     raise "fail 50" unless ic.exceptions == [[8, 9, 10]]
     raise "fail 51" unless ic.lines == [[9, 10, 50]]
 
-    ic.iseq = [:push_literal, 5, :goto, 4, :foo, :dummy, 99, 6]
+    ic.iseq = [:push_literal, 5, :goto, 4, :foo, :dummy, 99, 6, :push_const_fast, 7, 3]
     ic.literals = [:blah, :hello, :hi, :oh, :no, :hey, :howdy, :foo]
 
     ic.delete_literal(1, 2)
-    raise "fail 58" unless ic.iseq == [:push_literal, 3, :goto, 4, :foo, :dummy, 99, 4]
+    raise "fail 58" unless
+      ic.iseq == [:push_literal, 3, :goto, 4, :foo, :dummy, 99, 4, :push_const_fast, 5, 1]
     raise "fail 59" unless ic.literals == [:blah, :oh, :no, :hey, :howdy, :foo]
 
     ic.delete_literal(-1)
-    raise "fail 60" unless ic.iseq == [:push_literal, 3, :goto, 4, :foo, :dummy, 99, 4]
+    raise "fail 60" unless
+      ic.iseq == [:push_literal, 3, :goto, 4, :foo, :dummy, 99, 4, :push_const_fast, 5, 1]
     raise "fail 61" unless ic.literals == [:blah, :oh, :no, :hey, :howdy]
 
     ic.delete_literal(2)
-    raise "fail 62" unless ic.iseq == [:push_literal, 2, :goto, 4, :foo, :dummy, 99, 3]
+    raise "fail 62" unless
+      ic.iseq == [:push_literal, 2, :goto, 4, :foo, :dummy, 99, 3, :push_const_fast, 4, 1]
     raise "fail 63" unless ic.literals == [:blah, :oh, :hey, :howdy]
 
     ic.delete_literal(2)
-    raise "fail 64" unless ic.iseq == [:push_literal, 2, :goto, 4, :foo, :dummy, 99, 2]
+    raise "fail 64" unless
+      ic.iseq == [:push_literal, 2, :goto, 4, :foo, :dummy, 99, 2, :push_const_fast, 3, 1]
     raise "fail 65" unless ic.literals == [:blah, :oh, :howdy]
 
     ic.offset_literals(0..0, 17)
-    raise "fail 66" unless ic.iseq == [:push_literal, 19, :goto, 4, :foo, :dummy, 99, 2]
+    raise "fail 66" unless
+      ic.iseq == [:push_literal, 19, :goto, 4, :foo, :dummy, 99, 2, :push_const_fast, 3, 1]
     raise "fail 67" unless ic.literals == [:blah, :oh, :howdy]
+
+    ic.offset_literals(8..8, 5)
+    raise "fail 67.1" unless
+      ic.iseq == [:push_literal, 19, :goto, 4, :foo, :dummy, 99, 2, :push_const_fast, 8, 6]
+    raise "fail 67.2" unless ic.literals == [:blah, :oh, :howdy]
 
     ic.cm.local_count = 3
     ic.iseq = [:push_local_depth, 9, 7, :goto, 5, :set_local, 3]
