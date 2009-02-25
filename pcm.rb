@@ -143,10 +143,10 @@ module PrettyCM
       out << "#{NEWLINE + tabs}InstructionSequence #{obj.size}"
 
       obj.each do |opcode|
+        cmnt = "(#{i})"
+        column_space = ' ' * (8 - cmnt.length)
         ins_str = opcode.join(' ')
-        column_space = ' ' * (34 - ins_str.length)
-        column_space = ' ' if column_space.empty?
-        out << "#{NEWLINE + tabs + TAB}" + ins_str + column_space + "(#{i})"
+        out << NEWLINE + tabs + TAB + cmnt + column_space + ins_str
         i += opcode.length
       end
 
