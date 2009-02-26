@@ -27,6 +27,10 @@ module PrintDebug
 
   def self.modify_instructions(ic)
 
+    if ic.cm.stack_size >= 0
+      ic.cm.stack_size += 5
+    end
+
     ic.literals << "[#{ic.cm.file}]"
     ic.literals << "[#{ic.cm.name}]"
     ic.literals << SendSite.new(:puts)
@@ -44,10 +48,25 @@ module PrintDebug
 
     while i
       ins_str = ic.iseq[i].to_s
-      if /send/.match(ins_str)
-        ic.insert(i, [:push_const_fast, lit_len - 2, lit_len - 1, :push_int, i + 9,
-                      :send_stack, lit_len - 3, 1, :pop])
-        i += 9
+      if /send/ =~ ins_str
+        ary = [:push_const_fast, lit_len - 2, lit_len - 1, :push_int, i + 9,
+               :send_stack, lit_len - 3, 1, :pop]
+
+        v = i
+        k = ic.previous(i)
+        while k
+          ins_str_prev = ic.iseq[k].to_s
+
+          if /allow_private|set_call_flags/ =~ ins_str_prev
+            v = k
+            k = ic.previous(k)
+          else
+            k = nil
+          end
+        end
+
+        ic.insert(v, ary)
+        i = v + ary.size + (i - v)
       end
       i = ic.next(i)
     end
