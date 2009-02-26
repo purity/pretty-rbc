@@ -11,7 +11,6 @@ class InstructionChanges
   attr_accessor :iseq
   attr_accessor :literals
   attr_accessor :local_names
-  attr_accessor :exceptions
   attr_accessor :lines
 
   attr_accessor :immutable_iseq_refs
@@ -40,8 +39,8 @@ class InstructionChanges
   }
 
   INSTRUCTIONS_WITH_ISEQ_REF = {
-    :goto => true, :goto_if_true => true, :goto_if_false => true,
-    :goto_if_defined => true, :setup_unwind => true
+    :goto => 0, :goto_if_true => 0, :goto_if_false => 0,
+    :goto_if_defined => 0, :setup_unwind => 0, :dinosaur => 1
   }
 
   def initialize(cm)
@@ -49,7 +48,6 @@ class InstructionChanges
     @iseq = cm.iseq.decode.flatten
     @literals = cm.literals.to_a
     @local_names = cm.local_names.to_a
-    @exceptions = cm.exceptions.to_a.map { |tup| tup.to_a }
     @lines = cm.lines.to_a.map { |tup| tup.to_a }
 
     @immutable_iseq_refs = []
@@ -64,7 +62,6 @@ class InstructionChanges
     @cm.iseq = encoder.encode_stream(layered_iseq)
     @cm.literals = icc.to_tup(@literals)
     @cm.local_names = icc.to_tup(@local_names)
-    @cm.exceptions = icc.to_tup(@exceptions.map { |arr| icc.to_tup(arr) })
     @cm.lines = icc.to_tup(@lines.map { |arr| icc.to_tup(arr) })
   end
 
@@ -114,7 +111,6 @@ class InstructionChanges
     size_diff = newsize - oldsize
 
     recalculate_iseq_refs(:insert, i, size_diff)
-    recalculate_exceptions(:insert, i, size_diff)
     recalculate_lines(:insert, i, size_diff)
   end
 
@@ -168,7 +164,6 @@ class InstructionChanges
       size_diff = oldsize - newsize
 
       recalculate_iseq_refs(:delete, i, size_diff)
-      recalculate_exceptions(:delete, i, size_diff)
       recalculate_lines(:delete, i, size_diff)
     end
   end
@@ -197,14 +192,13 @@ class InstructionChanges
       x = i + size_k
 
       @iseq.each_index do |n|
-        if at_ins_with_iseq_ref? n
-          if @iseq[n.succ] == k
-            @iseq[n.succ] = x
+        if arg_idx = at_ins_with_iseq_ref?(n)
+          if @iseq[n.succ + arg_idx] == k
+            @iseq[n.succ + arg_idx] = x
           end
         end
       end
 
-      recalculate_exceptions(:swap, i, size_i + size_k)
       recalculate_lines(:swap, i, size_i + size_k)
     end
   end
@@ -215,17 +209,17 @@ class InstructionChanges
 
     @iseq.each_index do |n|
 
-      if at_ins_with_iseq_ref? n
-        x = @iseq[n.succ]
+      if arg_idx = at_ins_with_iseq_ref?(n)
+        x = @iseq[n.succ + arg_idx]
         unless @immutable_iseq_refs.include? x
           case action
           when :delete
             if normalized_iseq_ref(x) > k
-              @iseq[n.succ] = x - size_diff
+              @iseq[n.succ + arg_idx] = x - size_diff
             end
           when :insert
             if normalized_iseq_ref(x) >= i and (n < i or n > k)
-              @iseq[n.succ] = x + size_diff
+              @iseq[n.succ + arg_idx] = x + size_diff
             end
           end
         end
@@ -241,10 +235,10 @@ class InstructionChanges
     first_index = range.first
 
     for i in range
-      if at_ins_with_iseq_ref? i
-        k = @iseq[i.succ]
+      if arg_idx = at_ins_with_iseq_ref?(i)
+        k = @iseq[i.succ + arg_idx]
         unless @immutable_iseq_refs.include? k
-          @iseq[i.succ] = k + first_index + ISEQ_REF_OFFSET
+          @iseq[i.succ + arg_idx] = k + first_index + ISEQ_REF_OFFSET
         end
       end
     end
@@ -256,9 +250,9 @@ class InstructionChanges
 
     @iseq.each_index do |i|
 
-      if at_ins_with_iseq_ref? i
-        k = @iseq[i.succ]
-        @iseq[i.succ] = normalized_iseq_ref(k)
+      if arg_idx = at_ins_with_iseq_ref?(i)
+        k = @iseq[i.succ + arg_idx]
+        @iseq[i.succ + arg_idx] = normalized_iseq_ref(k)
       end
     end
   end
@@ -271,7 +265,7 @@ class InstructionChanges
     end
   end
 
-  def recalculate_exceptions(action, i, size_diff)
+  def obsolete_recalculate_exceptions(action, i, size_diff)
     return if size_diff == 0
     k = i + (size_diff - 1)
 
@@ -360,14 +354,14 @@ class InstructionChanges
     end
   end
 
-  def duplicate_exceptions(range)
+  def obsolete_duplicate_exceptions(range)
     for i in range
       first, last, other = @exceptions[i]
       @exceptions << [first, last, other]
     end
   end
 
-  def offset_exceptions(range, offset)
+  def obsolete_offset_exceptions(range, offset)
     for i in range
       first, last, other = @exceptions[i]
       @exceptions[i] = [first + offset, last + offset, other + offset]
@@ -575,7 +569,7 @@ class InstructionChanges
 
     ic.iseq = [:foo, 10, :hi]
     ic.literals = []
-    ic.exceptions = []
+    #ic.exceptions = []
     ic.lines = []
 
     raise "fail 0" unless ic.next(0) == 2
@@ -649,11 +643,11 @@ class InstructionChanges
     raise "fail 20" unless ic.next(2).nil?
 
     ic.immutable_iseq_refs = [6]
-    ic.iseq = [:goto, 3, :hello, :hi, :goto_if_true, 6, :foo, :when]
+    ic.iseq = [:goto, 3, :hello, :hi, :goto_if_true, 6, :foo, :when, :dinosaur, 3, 4]
 
     ic.delete(2)
     raise "fail 21" unless
-      ic.iseq == [:goto, 2, :hi, :goto_if_true, 6, :foo, :when]
+      ic.iseq == [:goto, 2, :hi, :goto_if_true, 6, :foo, :when, :dinosaur, 3, 3]
 
     ic.immutable_iseq_refs = []
     ic.iseq = [:here, 5, :where, 10]
@@ -675,44 +669,44 @@ class InstructionChanges
     ic.normalize_iseq_refs
     raise "fail 24.1" unless ic.iseq == [:huh, :goto, 3, :here, :foo, :goto, 7, :what]
 
-    ic.iseq = [:a, :b, :c, :d, :e, :f, :g, :h, :i, :j, :k, :l,
-               :m, :n, :o, :p, :q, :r, :s, :t, :u, :v, :w, :x, :y, :z]
-    ic.exceptions = [[0, 2, 24], [3, 7, 8], [9, 19, 22], [20, 20, 21]]
+    #ic.iseq = [:a, :b, :c, :d, :e, :f, :g, :h, :i, :j, :k, :l,
+    #           :m, :n, :o, :p, :q, :r, :s, :t, :u, :v, :w, :x, :y, :z]
+    #ic.exceptions = [[0, 2, 24], [3, 7, 8], [9, 19, 22], [20, 20, 21]]
 
-    ic.delete(0, 3)
-    raise "fail 25" unless ic.exceptions == [[0, 4, 5], [6, 16, 19], [17, 17, 18]]
+    #ic.delete(0, 3)
+    #raise "fail 25" unless ic.exceptions == [[0, 4, 5], [6, 16, 19], [17, 17, 18]]
 
-    ic.delete(6, 2)
-    raise "fail 26" unless ic.exceptions == [[0, 4, 5], [6, 14, 17], [15, 15, 16]]
+    #ic.delete(6, 2)
+    #raise "fail 26" unless ic.exceptions == [[0, 4, 5], [6, 14, 17], [15, 15, 16]]
 
-    ic.delete(14, 4)
-    raise "fail 27" unless ic.exceptions == [[0, 4, 5], [6, 13, 14]]
+    #ic.delete(14, 4)
+    #raise "fail 27" unless ic.exceptions == [[0, 4, 5], [6, 13, 14]]
 
-    ic.delete(13)
-    raise "fail 28" unless ic.exceptions == [[0, 4, 5], [6, 12, 13]]
+    #ic.delete(13)
+    #raise "fail 28" unless ic.exceptions == [[0, 4, 5], [6, 12, 13]]
 
-    ic.delete(8, 2)
-    raise "fail 29" unless ic.exceptions == [[0, 4, 5], [6, 10, 11]]
+    #ic.delete(8, 2)
+    #raise "fail 29" unless ic.exceptions == [[0, 4, 5], [6, 10, 11]]
 
-    ic.delete(3)
-    raise "fail 30" unless ic.exceptions == [[0, 3, 4], [5, 9, 10]]
+    #ic.delete(3)
+    #raise "fail 30" unless ic.exceptions == [[0, 3, 4], [5, 9, 10]]
 
-    ic.delete(4)
-    raise "fail 31" unless ic.exceptions == [[0, 3, 4], [4, 8, 9]]
+    #ic.delete(4)
+    #raise "fail 31" unless ic.exceptions == [[0, 3, 4], [4, 8, 9]]
 
-    ic.insert(4, [:a, :b])
-    raise "fail 32" unless ic.exceptions == [[0, 3, 6], [6, 10, 11]]
+    #ic.insert(4, [:a, :b])
+    #raise "fail 32" unless ic.exceptions == [[0, 3, 6], [6, 10, 11]]
 
-    ic.insert(12, [:foo])
-    raise "fail 33" unless ic.exceptions == [[0, 3, 6], [6, 10, 11]]
-    raise "fail 34" unless
-      ic.iseq == [:d, :e, :f, :h, :a, :b, :l, :m, :p, :q, :r, :x, :foo, :y, :z]
+    #ic.insert(12, [:foo])
+    #raise "fail 33" unless ic.exceptions == [[0, 3, 6], [6, 10, 11]]
+    #raise "fail 34" unless
+    #  ic.iseq == [:d, :e, :f, :h, :a, :b, :l, :m, :p, :q, :r, :x, :foo, :y, :z]
 
-    ic.duplicate_exceptions(0..0)
-    raise "fail 35" unless ic.exceptions == [[0, 3, 6], [6, 10, 11], [0, 3, 6]]
+    #ic.duplicate_exceptions(0..0)
+    #raise "fail 35" unless ic.exceptions == [[0, 3, 6], [6, 10, 11], [0, 3, 6]]
 
-    ic.offset_exceptions(1..2, 3)
-    raise "fail 36" unless ic.exceptions == [[0, 3, 6], [9, 13, 14], [3, 6, 9]]
+    #ic.offset_exceptions(1..2, 3)
+    #raise "fail 36" unless ic.exceptions == [[0, 3, 6], [9, 13, 14], [3, 6, 9]]
 
     ic.iseq = [:a, :b, :c, :d, :e, :f, :g, :h, :i, :j, :k, :l,
                :m, :n, :o, :p, :q, :r, :s, :t, :u, :v, :w, :x, :y, :z]
@@ -754,13 +748,13 @@ class InstructionChanges
     raise "fail 48" unless ic.lines == [[0, 3, 8], [9, 13, 22], [3, 6, 8]]
 
     ic.iseq = [:a, :b, :c, :d, :e, :f, :g, :h, :i, :j, :k, :l, :m]
-    ic.exceptions = [[8, 9, 10]]
+    #ic.exceptions = [[8, 9, 10]]
     ic.lines = [[9, 10, 50]]
 
     ic.duplicate_iseq(4..5)
     raise "fail 49" unless
       ic.iseq == [:a, :b, :c, :d, :e, :f, :g, :h, :i, :j, :k, :l, :m, :e, :f]
-    raise "fail 50" unless ic.exceptions == [[8, 9, 10]]
+    #raise "fail 50" unless ic.exceptions == [[8, 9, 10]]
     raise "fail 51" unless ic.lines == [[9, 10, 50]]
 
     ic.iseq = [:push_literal, 5, :goto, 4, :foo, :dummy, 99, 6, :push_const_fast, 7, 3]
@@ -818,40 +812,40 @@ class InstructionChanges
     raise "fail 73" unless ic.at_ins_with_local?(3) == nil
 
     ic.iseq = [:foo, :hi, 4, 3, :no, :goto, 4, :goto_if_true, 7, :hello, :goto, 4]
-    ic.exceptions = [[0, 3, 5], [4, 4, 9], [1, 2, 4], [0, 9, 10], [5, 6, 7], [1, 4, 5]]
+    #ic.exceptions = [[0, 3, 5], [4, 4, 9], [1, 2, 4], [0, 9, 10], [5, 6, 7], [1, 4, 5]]
     ic.lines = [[0, 3, 5], [4, 4, 9], [1, 2, 4], [0, 9, 10], [5, 6, 7], [1, 4, 5]]
 
     ic.swap(5)
     raise "fail 74.0" unless
       ic.iseq == [:foo, :hi, 4, 3, :no, :goto_if_true, 7, :goto, 4, :hello, :goto, 4]
-    raise "fail 74.1" unless
-      ic.exceptions == [[0, 3, 5], [4, 4, 9], [1, 2, 4], [0, 9, 10], [5, 6, 7], [1, 4, 5]]
+    #raise "fail 74.1" unless
+    #  ic.exceptions == [[0, 3, 5], [4, 4, 9], [1, 2, 4], [0, 9, 10], [5, 6, 7], [1, 4, 5]]
     raise "fail 74.2" unless
       ic.lines == [[0, 3, 5], [4, 4, 9], [1, 2, 4], [0, 9, 10], [5, 6, 7], [1, 4, 5]]
 
     ic.swap(1)
     raise "fail 75.0" unless
       ic.iseq == [:foo, :no, :hi, 4, 3, :goto_if_true, 7, :goto, 2, :hello, :goto, 2]
-    raise "fail 75.1" unless
-      ic.exceptions == [[0, 1, 5], [2, 2, 9], [1, 1, 2], [0, 9, 10], [5, 6, 7], [1, 2, 5]]
+    #raise "fail 75.1" unless
+    #  ic.exceptions == [[0, 1, 5], [2, 2, 9], [1, 1, 2], [0, 9, 10], [5, 6, 7], [1, 2, 5]]
     raise "fail 75.2" unless
       ic.lines == [[0, 1, 5], [2, 2, 9], [1, 1, 4], [0, 9, 10], [5, 6, 7], [1, 2, 5]]
 
     ic.swap(1)
     raise "fail 76.0" unless
       ic.iseq == [:foo, :hi, 4, 3, :no, :goto_if_true, 7, :goto, 4, :hello, :goto, 4]
-    raise "fail 76.1" unless
-      ic.exceptions == [[0, 1, 5], [4, 4, 9], [1, 1, 4], [0, 9, 10], [5, 6, 7], [1, 4, 5]]
+    #raise "fail 76.1" unless
+    #  ic.exceptions == [[0, 1, 5], [4, 4, 9], [1, 1, 4], [0, 9, 10], [5, 6, 7], [1, 4, 5]]
     raise "fail 76.2" unless
       ic.lines == [[0, 1, 5], [4, 4, 9], [1, 1, 4], [0, 9, 10], [5, 6, 7], [1, 4, 5]]
 
     ic.iseq = [:foo, 15, :hi, 23, 57, :what]
-    ic.exceptions = [[1, 2, 4]]
+    #ic.exceptions = [[1, 2, 4]]
     ic.lines = [[1, 2, 4]]
 
     ic.swap(0)
     raise "fail 76.3" unless ic.iseq == [:hi, 23, 57, :foo, 15, :what]
-    raise "fail 76.4" unless ic.exceptions == [[2, 3, 4]]
+    #raise "fail 76.4" unless ic.exceptions == [[2, 3, 4]]
     raise "fail 76.5" unless ic.lines == [[2, 3, 4]]
 
     # why goto denormalization-normalization is needed.
@@ -874,20 +868,20 @@ class InstructionChanges
     ic.normalize_iseq_refs
     raise "fail 79" unless ic.iseq == [:goto, 6, :foo, :goto, 5, :hi, :what]
 
-    ic.iseq = [:hello, 3, :foo, :hi, 2, :what]
-    ic.exceptions = [[0, 1, 5]]
+    #ic.iseq = [:hello, 3, :foo, :hi, 2, :what]
+    #ic.exceptions = [[0, 1, 5]]
 
-    ic.delete(2)
-    raise "fail 80" unless ic.iseq == [:hello, 3, :hi, 2, :what]
-    raise "fail 81" unless ic.exceptions == [[0, 1, 4]]
+    #ic.delete(2)
+    #raise "fail 80" unless ic.iseq == [:hello, 3, :hi, 2, :what]
+    #raise "fail 81" unless ic.exceptions == [[0, 1, 4]]
 
     ic.iseq = [:goto, 2, :hi]
-    ic.exceptions = [[0, 1, 2]]
+    #ic.exceptions = [[0, 1, 2]]
     ic.lines = [[0, 2, 5]]
 
     ic.insert(0, [])
     raise "fail 82.0" unless ic.iseq == [:goto, 2, :hi]
-    raise "fail 82.1" unless ic.exceptions == [[0, 1, 2]]
+    #raise "fail 82.1" unless ic.exceptions == [[0, 1, 2]]
     raise "fail 82.2" unless ic.lines == [[0, 2, 5]]
 
     ic.iseq = [:push_true]
@@ -896,7 +890,7 @@ class InstructionChanges
     raise "fail 83.0" unless ic.cm.iseq.instance_of? InstructionSequence
     raise "fail 83.1" unless ic.cm.literals.instance_of? Tuple
     raise "fail 83.2" unless ic.cm.local_names.instance_of? Tuple
-    raise "fail 83.3" unless ic.cm.exceptions.instance_of? Tuple
+    #raise "fail 83.3" unless ic.cm.exceptions.instance_of? Tuple
     raise "fail 83.4" unless ic.cm.lines.instance_of? Tuple
   end
 end
