@@ -2,13 +2,18 @@
 # prints to STDERR the indexes of send instructions before each is executed.
 # it's probably good to be cautious about using this to debug IO problems.
 #
-# 1. add instruction_changes.rb and print_debug.rb to kernel/delta or
+# 1. add instruction_changes.rb, pcm.rb, and print_debug.rb to kernel/compiler or
 #    InstructionChanges and PrintDebug to kernel/compiler/compiled_file.rb or wherever
-# 2. add something like this to Compiler.compile_file/string or CompiledFile.dump:
+# 2. add something like these to CompiledFile.dump or Compiler.compile_file/string:
 #
-#    if /common\/io\.rb/.match(cm.file.to_s)
+#    if /common\/io\.rb/.match(file)
 #      PrintDebug.run(cm, [], [:sysread])
 #    end
+#
+#    PrintDebug.run(cm)
+#    str = PrettyCM.dump(cm)
+#    fly = cm.file.to_s
+#    PrettyCM.write_file(fly + '.pcm', str) if fly != ''
 #
 module PrintDebug
 
@@ -31,26 +36,23 @@ module PrintDebug
       ic.cm.stack_size += 5
     end
 
-    ic.literals << "[#{ic.cm.file}]"
-    ic.literals << "[#{ic.cm.name}]"
+    ic.literals << "file: [#{ic.cm.file}]"
+    ic.literals << "method: [#{ic.cm.name}]"
     ic.literals << SendSite.new(:puts)
     ic.literals << :STDERR
     ic.literals << nil
     lit_len = ic.literals.length
 
-    ic.insert(0, [:push_const_fast, lit_len - 2, lit_len - 1, :push_literal, lit_len - 5,
-                  :string_dup, :send_stack, lit_len - 3, 1, :pop])
-
-    ic.insert(10, [:push_const_fast, lit_len - 2, lit_len - 1, :push_literal, lit_len - 4,
-                   :string_dup, :send_stack, lit_len - 3, 1, :pop])
-
-    i = 20
-
+    i = 0
     while i
       ins_str = ic.iseq[i].to_s
       if /send/ =~ ins_str
-        ary = [:push_const_fast, lit_len - 2, lit_len - 1, :push_int, i + 9,
-               :send_stack, lit_len - 3, 1, :pop]
+        ary = [:push_const_fast, lit_len - 2, lit_len - 1, :push_literal, lit_len - 5,
+                 :string_dup, :send_stack, lit_len - 3, 1, :pop,
+               :push_const_fast, lit_len - 2, lit_len - 1, :push_literal, lit_len - 4,
+                 :string_dup, :send_stack, lit_len - 3, 1, :pop,
+               :push_const_fast, lit_len - 2, lit_len - 1, :push_int, 0,
+                 :send_stack, lit_len - 3, 1, :pop]
 
         v = i
         k = ic.previous(i)
@@ -65,8 +67,9 @@ module PrintDebug
           end
         end
 
-        ic.insert(v, ary)
         i = v + ary.size + (i - v)
+        ary[24] = i
+        ic.insert(v, ary)
       end
       i = ic.next(i)
     end
