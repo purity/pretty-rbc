@@ -17,6 +17,8 @@
 #
 module PrintDebug
 
+  SLOT_FOR_SEND_INDEX = 34
+
   def self.all_methods(obj)
     case obj
     when CompiledMethod
@@ -32,10 +34,18 @@ module PrintDebug
 
   def self.modify_instructions(ic)
 
-    if ic.cm.stack_size >= 0
-      ic.cm.stack_size += 5
+    # have i already modified this compiled method?
+    if ic.iseq[0] == :push_true and ic.iseq[1] == :pop
+      return
     end
 
+    ic.insert(0, [:push_true, :pop])
+
+    if ic.cm.stack_size >= 0
+      ic.cm.stack_size += 3
+    end
+
+    ic.literals << SendSite.new(:class)
     ic.literals << "file: [#{ic.cm.file}]"
     ic.literals << "method: [#{ic.cm.name}]"
     ic.literals << SendSite.new(:puts)
@@ -43,16 +53,19 @@ module PrintDebug
     ic.literals << nil
     lit_len = ic.literals.length
 
+    ary = [:push_const_fast, lit_len - 2, lit_len - 1, :push_literal, lit_len - 5,
+             :string_dup, :send_stack, lit_len - 3, 1, :pop,
+           :push_const_fast, lit_len - 2, lit_len - 1, :push_literal, lit_len - 4,
+             :string_dup, :send_stack, lit_len - 3, 1, :pop,
+           :push_const_fast, lit_len - 2, lit_len - 1, :push_self,
+             :send_method, lit_len - 6, :send_stack, lit_len - 3, 1, :pop,
+           :push_const_fast, lit_len - 2, lit_len - 1, :push_int, 0,
+             :send_stack, lit_len - 3, 1, :pop]
+
     i = 0
     while i
       ins_str = ic.iseq[i].to_s
       if /send/ =~ ins_str
-        ary = [:push_const_fast, lit_len - 2, lit_len - 1, :push_literal, lit_len - 5,
-                 :string_dup, :send_stack, lit_len - 3, 1, :pop,
-               :push_const_fast, lit_len - 2, lit_len - 1, :push_literal, lit_len - 4,
-                 :string_dup, :send_stack, lit_len - 3, 1, :pop,
-               :push_const_fast, lit_len - 2, lit_len - 1, :push_int, 0,
-                 :send_stack, lit_len - 3, 1, :pop]
 
         v = i
         k = ic.previous(i)
@@ -68,7 +81,7 @@ module PrintDebug
         end
 
         i = v + ary.size + (i - v)
-        ary[24] = i
+        ary[SLOT_FOR_SEND_INDEX] = i
         ic.insert(v, ary)
       end
       i = ic.next(i)
