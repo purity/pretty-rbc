@@ -1,5 +1,5 @@
 
-# prints to STDERR the indexes of send instructions before each is executed.
+# prints to STDOUT the indexes of send instructions before each is executed.
 # it's probably good to be cautious about using this to debug IO problems.
 #
 # 1. add instruction_changes.rb, pcm.rb, and print_debug.rb to kernel/compiler or
@@ -49,7 +49,7 @@ module PrintDebug
     ic.literals << "file: [#{ic.cm.file}]"
     ic.literals << "method: [#{ic.cm.name}]"
     ic.literals << SendSite.new(:puts)
-    ic.literals << :STDERR
+    ic.literals << :STDOUT
     ic.literals << nil
     lit_len = ic.literals.length
 
