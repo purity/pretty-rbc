@@ -17,7 +17,52 @@
 #
 module PrintDebug
 
-  SLOT_FOR_SEND_INDEX = 34
+  # STDOUT.puts "file"
+  # STDOUT.puts "method"
+  # if self.kind_of? Class or self.kind_of? Module
+  #   STDOUT.puts self
+  # else
+  #   STDOUT.puts self.class
+  # end
+  # STDOUT.puts 0   # send index
+
+  PRINT_INSTRUCTIONS = [
+    :push_const_fast, 0, 1,
+    :push_literal, 4,
+    :string_dup,
+    :send_stack, 2, 1,
+    :pop,
+    :push_const_fast, 0, 1,
+    :push_literal, 3,
+    :string_dup,
+    :send_stack, 2, 1,
+    :pop,
+    :push_self,
+    :push_const_fast, 9, 10,
+    :send_stack, 6, 1,
+    :dup_top,
+    :goto_if_true, 38,
+    :pop,
+    :push_self,
+    :push_const_fast, 7, 8,
+    :send_stack, 6, 1,
+    :goto_if_false, 49,
+    :push_const_fast, 0, 1,
+    :push_self,
+    :send_stack, 2, 1,
+    :goto, 58,
+    :push_const_fast, 0, 1,
+    :push_self,
+    :send_method, 5,
+    :send_stack, 2, 1,
+    :pop,
+    :push_const_fast, 0, 1,
+    :push_int, 0,
+    :send_stack, 2, 1,
+    :pop
+  ]
+
+  OFFSET_FOR_SEND_INDEX = 63
 
   def self.all_methods(obj)
     case obj
@@ -45,22 +90,19 @@ module PrintDebug
       ic.cm.stack_size += 3
     end
 
-    ic.literals << SendSite.new(:class)
-    ic.literals << "file: [#{ic.cm.file}]"
-    ic.literals << "method: [#{ic.cm.name}]"
-    ic.literals << SendSite.new(:puts)
-    ic.literals << :STDOUT
-    ic.literals << nil
     lit_len = ic.literals.length
 
-    ary = [:push_const_fast, lit_len - 2, lit_len - 1, :push_literal, lit_len - 5,
-             :string_dup, :send_stack, lit_len - 3, 1, :pop,
-           :push_const_fast, lit_len - 2, lit_len - 1, :push_literal, lit_len - 4,
-             :string_dup, :send_stack, lit_len - 3, 1, :pop,
-           :push_const_fast, lit_len - 2, lit_len - 1, :push_self,
-             :send_method, lit_len - 6, :send_stack, lit_len - 3, 1, :pop,
-           :push_const_fast, lit_len - 2, lit_len - 1, :push_int, 0,
-             :send_stack, lit_len - 3, 1, :pop]
+    ic.literals << :STDOUT
+    ic.literals << nil
+    ic.literals << SendSite.new(:puts)
+    ic.literals << "method: [#{ic.cm.name}]"
+    ic.literals << "file: [#{ic.cm.file}]"
+    ic.literals << SendSite.new(:class)
+    ic.literals << SendSite.new(:kind_of?)
+    ic.literals << :Module
+    ic.literals << nil
+    ic.literals << :Class
+    ic.literals << nil
 
     i = 0
     while i
@@ -80,13 +122,19 @@ module PrintDebug
           end
         end
 
-        i = v + ary.size + (i - v)
-        ary[SLOT_FOR_SEND_INDEX] = i
-        ic.insert(v, ary)
+        prnt_sz = PRINT_INSTRUCTIONS.size
+        i = v + prnt_sz + (i - v)
+
+        ic.insert(v, PRINT_INSTRUCTIONS)
+        ic.offset_iseq_refs(v...(v + prnt_sz))
+        ic.offset_literals(v...(v + prnt_sz), lit_len)
+
+        ic.replace(v + OFFSET_FOR_SEND_INDEX, i)
       end
       i = ic.next(i)
     end
 
+    ic.normalize_iseq_refs
     ic.finalize
   end
 
