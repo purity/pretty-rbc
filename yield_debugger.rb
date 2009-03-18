@@ -25,9 +25,9 @@ module YieldDebugger
     i = ic.next(1)
     while i
       if ic.next(i)
-        ic.insert(ic.next(i), [:noop])
+        ic.insert(ic.next(i), [:yield_debugger])
       else
-        ic.insert(-1, [:noop])
+        ic.insert(-1, [:yield_debugger])
       end
       ic.swap(i)
       i = ic.next(i.succ)
