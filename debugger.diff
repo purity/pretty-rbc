@@ -992,83 +992,93 @@ index 1126ad1..60c5e0a 100644
      it "reassociates self with the I/O stream specified as an argument, after some sysreads" do
        length = 12 # length of first lines in numbered_lines.txt
  
+diff --git a/vm/builtin/compiledmethod.cpp b/vm/builtin/compiledmethod.cpp
+index db093fc..6cf4e5e 100644
+--- a/vm/builtin/compiledmethod.cpp
++++ b/vm/builtin/compiledmethod.cpp
+@@ -33,6 +33,7 @@ namespace rubinius {
+     cm->local_count(state, Fixnum::from(0));
+     cm->set_executor(CompiledMethod::default_executor);
+     cm->backend_method_ = NULL;
++    cm->breakpoints = NULL;
+ 
+     return cm;
+   }
+diff --git a/vm/builtin/compiledmethod.hpp b/vm/builtin/compiledmethod.hpp
+index bf80025..4442914 100644
+--- a/vm/builtin/compiledmethod.hpp
++++ b/vm/builtin/compiledmethod.hpp
+@@ -37,7 +37,7 @@ namespace rubinius {
+     /* accessors */
+ 
+     VMMethod* backend_method_;
+-
++    uint8_t* breakpoints;
+ 
+     attr_accessor(name, Symbol);
+     attr_accessor(iseq, InstructionSequence);
 diff --git a/vm/helpers.cpp b/vm/helpers.cpp
-index dd2ba0c..571c049 100644
+index 82b1e4f..0f2580c 100644
 --- a/vm/helpers.cpp
 +++ b/vm/helpers.cpp
-@@ -12,6 +12,7 @@
- #include "objectmemory.hpp"
- #include "builtin/tuple.hpp"
- #include "builtin/sendsite.hpp"
+@@ -15,6 +15,7 @@
+ #include "builtin/system.hpp"
+ #include "builtin/thread.hpp"
+ #include "builtin/channel.hpp"
 +#include "builtin/iseq.hpp"
  
  #include "vm.hpp"
  #include "object_utils.hpp"
-@@ -19,6 +20,9 @@
+@@ -22,6 +23,10 @@
  
  namespace rubinius {
    namespace Helpers {
 +
 +    pthread_mutex_t mutex_yield_debugger;
++    uint32_t debug_options;
 +
      void add_method(STATE, CallFrame* call_frame, Module* mod, Symbol* name, CompiledMethod* method) {
        method->scope(state, call_frame->cm->scope());
        method->serial(state, Fixnum::from(0));
-@@ -242,32 +246,51 @@ namespace rubinius {
+@@ -248,27 +253,79 @@ namespace rubinius {
        return module;
      }
  
--    /** @todo Fix this, Task is gone. --rue */
++    void print_debug_header(STATE, Object* self, CompiledMethod* cm, int ip);
++
      void yield_debugger(STATE, CallFrame* call_frame) {
--//
--//    Channel* chan;
--//    if(debug_channel_->nil_p()) {
--//      chan = try_as<Channel>(G(vm)->get_ivar(state,
--//            state->symbol("@debug_channel")));
--//
--//      if(!chan) return;
--//    } else {
--//      chan = debug_channel_;
--//    }
--//
--//    if(control_channel_->nil_p()) {
--//      control_channel(state, Channel::create(state));
--//    }
--//
--//    //sassert(chan->has_readers_p());
--//
--//    // active_->reference(state);
--//
--//    Thread* thr = G(current_thread);
--//    thr->frozen_stack(state, Qtrue);
--//    chan->send(state, thr);
--//    control_channel_->receive(state);
--      abort();
+-      Channel* chan;
 +      char* input = new char[100];
-+      VMMethod* vmm = call_frame->cm->backend_method_;
++      Object* self = call_frame->scope->self();
++      CompiledMethod* cm = call_frame->cm;
 +      int ip = call_frame->ip - 1;
++      uint32_t num_ops = cm->iseq()->opcodes()->num_fields();
 +
 +      pthread_mutex_lock(&mutex_yield_debugger);
-+
-+      if(!vmm) goto cleanup_all;
-+
-+      if(vmm->breakpoints) {
-+        if(vmm->breakpoints[ip] == 0) goto cleanup_all;
+ 
+-      state->set_call_frame(call_frame);
++      if(cm->breakpoints) {
++        if(cm->breakpoints[ip] == 0) goto cleanup_all;
 +      }
 +      else {
-+        vmm->breakpoints = new uint8_t[vmm->total];
-+        memset(vmm->breakpoints, 0, vmm->total);
-+        vmm->breakpoints[ip] = 1;
++        cm->breakpoints = new uint8_t[num_ops];
++        memset(cm->breakpoints, 0, num_ops);
++        cm->breakpoints[ip] = 1;
 +      }
-+goto cleanup_all;
-+      printf("[debug] thread id: %p, self pointer: %p, ip: %d\n",
-+          (void*)pthread_self(), call_frame->scope->self(), ip);
-+      printf("[debug] method name: '%s'\n", call_frame->name->c_str(state));
-+
+ 
+-      chan = try_as<Channel>(G(vm)->get_ivar(state,
+-            state->symbol("@debug_channel")));
++      print_debug_header(state, self, cm, ip);
+ 
+-      if(!chan) return;
 +      while(1) {
-+
+ 
+-      Channel* control = state->thread->control_channel();
 +        fgets(input, 96, stdin);
-+
+ 
+-      if(control->nil_p()) {
+-        control = Channel::create(state);
+-        state->thread->control_channel(state, control);
 +        if(strcmp(input, "help\n") == 0) {
 +          const char* str =
 +            "run - continue execution of next instruction\n"\
@@ -1080,39 +1090,45 @@ index dd2ba0c..571c049 100644
 +          break;
 +        }
 +        else {
-+          vmm->breakpoints[ip] = 0;
++          cm->breakpoints[ip] = 0;
 +          break;
 +        }
-+      }
-+
+       }
+ 
+-      sassert(chan->has_readers_p());
 +    cleanup_all:
 +      pthread_mutex_unlock(&mutex_yield_debugger);
 +      delete[] input;
-     }
- 
-   }
-diff --git a/vm/vmmethod.cpp b/vm/vmmethod.cpp
-index e92fdc1..118ec9e 100644
---- a/vm/vmmethod.cpp
-+++ b/vm/vmmethod.cpp
-@@ -77,6 +77,7 @@ namespace rubinius {
-     , run(standard_interpreter)
-     , original(state, meth)
-     , type(NULL)
-+    , breakpoints(NULL)
-   {
-     meth->set_executor(&VMMethod::execute);
- 
-diff --git a/vm/vmmethod.hpp b/vm/vmmethod.hpp
-index 2360246..0e87631 100644
---- a/vm/vmmethod.hpp
-+++ b/vm/vmmethod.hpp
-@@ -52,6 +52,8 @@ namespace rubinius {
- 
-     native_int call_count;
- 
-+    uint8_t* breakpoints;
++    }
 +
-   public: // Methods
-     static void init(STATE);
++    void print_debug_header(STATE, Object* self, CompiledMethod* cm, int ip) {
++      Tuple* ops = cm->iseq()->opcodes();
++      opcode op = ops->at(state, ip + 1)->nil_p() ? 0 :
++          static_cast<Fixnum*>(ops->at(state, ip + 1))->to_native();
++
++      printf("[debug] thread id: %p, self pointer: %p,\n"\
++             "        ip: %d, instruction: '%s'\n",
++          (void*)pthread_self(), self, ip + 1,
++          InstructionSequence::get_instruction_name(op));
++
++      if(kind_of<Class>(self) || kind_of<Module>(self)) {
++
++        if(static_cast<Module*>(self)->name() &&
++            !static_cast<Module*>(self)->name()->nil_p())
++          printf("        self class name: '%s'\n",
++              static_cast<Module*>(self)->name()->c_str(state));
++      }
++      else {
++        if(self->class_object(state)->name() &&
++            !self->class_object(state)->name()->nil_p())
++          printf("        self class name: '%s'\n",
++              self->class_object(state)->name()->c_str(state));
++      }
  
+-      chan->send(state, state->thread.get());
+-      control->receive(state, call_frame);
++      if(cm->name() && !cm->name()->nil_p())
++        printf("        method name: '%s'\n", cm->name()->c_str(state));
+     }
+   }
+ }
