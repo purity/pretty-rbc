@@ -1,9 +1,6 @@
 
 # ISSUES
 #   * stack_size not automatically recalculated
-#   * try ic.iseq.insert(-1, *ary) if ic.insert(-1, ary)
-#     screws up indexes in @lines. in the last tuple
-#     in @lines, tup[1] often/always equals @iseq.length
 #
 class InstructionChanges
 
@@ -48,7 +45,7 @@ class InstructionChanges
     @iseq = cm.iseq.decode.flatten
     @literals = cm.literals.to_a
     @local_names = cm.local_names.to_a
-    @lines = cm.lines.to_a.map { |tup| tup.to_a }
+    @lines = cm.lines.to_a
 
     @immutable_iseq_refs = []
     @never_shrink = true
@@ -62,7 +59,7 @@ class InstructionChanges
     @cm.iseq = encoder.encode_stream(layered_iseq)
     @cm.literals = icc.to_tup(@literals)
     @cm.local_names = icc.to_tup(@local_names)
-    @cm.lines = icc.to_tup(@lines.map { |arr| icc.to_tup(arr) })
+    @cm.lines = icc.to_tup(@lines)
   end
 
   def at_ins_with_iseq_ref?(i)
@@ -371,85 +368,67 @@ class InstructionChanges
   def recalculate_lines(action, i, size_diff)
     return if size_diff == 0
     k = i + (size_diff - 1)
+    len = @lines.length
 
     n = 0
-    while n < @lines.length
-      first, last, other = @lines[n]
-
-      # why can these be nil?
-      if first.nil? or last.nil? or first > last
-        @lines.delete_at(n)
-        next
-      end
+    while n < len
+      x = @lines[n]
 
       case action
       when :delete
-
-        if first >= i and last <= k
-          @lines.delete_at(n)
-          n -= 1
-        elsif first >= i and first <= k
-          @lines[n] = [i, last - size_diff, other]
-        elsif first < i and last >= i and last <= k
-          @lines[n] = [first, i - 1, other]
-        elsif first < i and last > k
-          @lines[n] = [first, last - size_diff, other]
-        elsif first > k and last > k
-          @lines[n] = [first - size_diff, last - size_diff, other]
+        if x > k
+          @lines[n] = x - size_diff
+        elsif x > i and x <= k
+          @lines[n] = i
         end
       when :insert
-
-        new_first = (first >= i ? first + size_diff : first)
-        new_last  = (last >= i ? last + size_diff : last)
-
-        @lines[n] = [new_first, new_last, other]
+        if x >= i
+          @lines[n] = x + size_diff
+        end
       when :swap
-
-        x = self.next(i)
-        old_x = i + (k - x).succ
-
-        new_first = if first > i and first <= k
-                      if first < old_x
-                        x - 1
-                      elsif first > old_x
-                        k
-                      else
-                        x
-                      end
-                    else
-                      first
-                    end
-
-        new_last = if last > i and last <= k
-                     if last < old_x
-                       x - 1
-                     elsif last > old_x
-                       k
-                     else
-                       x
-                     end
-                   else
-                     last
-                   end
-
-        @lines[n] = [new_first, new_last, other]
+        if x > i and x <= k
+          @lines[n] = self.next(i)
+        end
       end
 
-      n += 1
+      n += 2
+    end
+
+    sweep_lines if action == :delete
+  end
+
+  def sweep_lines
+
+    i = 0
+    while i < @lines.length and @lines.length > 3
+      k = i + 2
+      if @lines[i] == @lines[k]
+        2.times { @lines.delete_at(i) }
+      else
+        i += 2
+      end
+    end
+
+    if @iseq.length == 0
+      @lines = []
+    elsif @lines.length > 0 and @lines[-1] >= @iseq.length
+      @lines[-1] = @iseq.length - 1
     end
   end
 
   def duplicate_lines(range)
-    for i in range
-      first, last, other = @lines[i]
-      @lines << [first, last, other]
-    end
+    @lines += @lines[range]
   end
 
+  # assumes first and last in range point to refs to iseq
+  #
   def offset_lines(range, offset)
-    for i in range
-      first, last, other = @lines[i]
-      @lines[i] = [first + offset, last + offset, other]
+    i = range.first
+    k = range.last
+
+    while i <= k
+      @lines[i] += offset
+      i += 2
     end
   end
 
@@ -710,52 +689,71 @@ class InstructionChanges
 
     ic.iseq = [:a, :b, :c, :d, :e, :f, :g, :h, :i, :j, :k, :l,
                :m, :n, :o, :p, :q, :r, :s, :t, :u, :v, :w, :x, :y, :z]
-    ic.lines = [[0, 2, 24], [3, 7, 8], [9, 19, 22], [20, 20, 21]]
+    ic.lines = [0, 24, 2, 8, 7, 22, 19, 21, 20]
 
     ic.delete(0, 3)
-    raise "fail 37" unless ic.lines == [[0, 4, 8], [6, 16, 22], [17, 17, 21]]
+    raise "fail 37" unless ic.lines == [0, 8, 4, 22, 16, 21, 17]
 
     ic.delete(6, 2)
-    raise "fail 38" unless ic.lines == [[0, 4, 8], [6, 14, 22], [15, 15, 21]]
+    raise "fail 38" unless ic.lines == [0, 8, 4, 22, 14, 21, 15]
 
     ic.delete(14, 4)
-    raise "fail 39" unless ic.lines == [[0, 4, 8], [6, 13, 22]]
+    raise "fail 39" unless ic.lines == [0, 8, 4, 22, 14]
 
     ic.delete(13)
-    raise "fail 40" unless ic.lines == [[0, 4, 8], [6, 12, 22]]
+    raise "fail 40" unless ic.lines == [0, 8, 4, 22, 13]
 
     ic.delete(8, 2)
-    raise "fail 41" unless ic.lines == [[0, 4, 8], [6, 10, 22]]
+    raise "fail 41" unless ic.lines == [0, 8, 4, 22, 11]
 
     ic.delete(3)
-    raise "fail 42" unless ic.lines == [[0, 3, 8], [5, 9, 22]]
+    raise "fail 42" unless ic.lines == [0, 8, 3, 22, 10]
 
     ic.delete(4)
-    raise "fail 43" unless ic.lines == [[0, 3, 8], [4, 8, 22]]
+    raise "fail 43" unless ic.lines == [0, 8, 3, 22, 9]
 
     ic.insert(4, [:a, :b])
-    raise "fail 44" unless ic.lines == [[0, 3, 8], [6, 10, 22]]
+    raise "fail 44" unless ic.lines == [0, 8, 3, 22, 11]
 
     ic.insert(12, [:foo])
-    raise "fail 45" unless ic.lines == [[0, 3, 8], [6, 10, 22]]
+    raise "fail 45" unless ic.lines == [0, 8, 3, 22, 11]
     raise "fail 46" unless
       ic.iseq == [:d, :e, :f, :h, :a, :b, :l, :m, :p, :q, :r, :x, :foo, :y, :z]
 
-    ic.duplicate_lines(0..0)
-    raise "fail 47" unless ic.lines == [[0, 3, 8], [6, 10, 22], [0, 3, 8]]
+    ic.delete(9, 10)
+    raise "fail 46.1" unless ic.lines == [0, 8, 3, 22, 8]
 
-    ic.offset_lines(1..2, 3)
-    raise "fail 48" unless ic.lines == [[0, 3, 8], [9, 13, 22], [3, 6, 8]]
+    ic.iseq = [:a, :b, :c, :d, :e, :f, :g, :h, :i, :j, :k, :l, :m, :n, :o, :p]
+    ic.lines = [0, 3, 1, 6, 2, 4, 3, 9, 4]
+
+    ic.delete(0, 4)
+    raise "fail 46.2" unless ic.lines == [0, 9, 0]
+
+    ic.lines = [0, 3, 1, 6, 2, 4, 3, 9, 4]
+
+    ic.delete(0, 3)
+    raise "fail 46.3" unless ic.lines == [0, 9, 1]
+
+    ic.lines = [0, 3, 1, 6, 2, 4, 3, 9, 4]
+
+    ic.delete(0, 2)
+    raise "fail 46.4" unless ic.lines == [0, 4, 1, 9, 2]
+
+    ic.duplicate_lines(0..2)
+    raise "fail 47" unless ic.lines == [0, 4, 1, 9, 2, 0, 4, 1]
+
+    ic.offset_lines(2..4, 3)
+    raise "fail 48" unless ic.lines == [0, 4, 4, 9, 5, 0, 4, 1]
 
     ic.iseq = [:a, :b, :c, :d, :e, :f, :g, :h, :i, :j, :k, :l, :m]
     #ic.exceptions = [[8, 9, 10]]
-    ic.lines = [[9, 10, 50]]
+    ic.lines = [9, 50, 10]
 
     ic.duplicate_iseq(4..5)
     raise "fail 49" unless
       ic.iseq == [:a, :b, :c, :d, :e, :f, :g, :h, :i, :j, :k, :l, :m, :e, :f]
     #raise "fail 50" unless ic.exceptions == [[8, 9, 10]]
-    raise "fail 51" unless ic.lines == [[9, 10, 50]]
+    raise "fail 51" unless ic.lines == [9, 50, 10]
 
     ic.iseq = [:push_literal, 5, :goto, 4, :foo, :dummy, 99, 6, :push_const_fast, 7, 3]
     ic.literals = [:blah, :hello, :hi, :oh, :no, :hey, :howdy, :foo]
@@ -813,7 +811,7 @@ class InstructionChanges
 
     ic.iseq = [:foo, :hi, 4, 3, :no, :goto, 4, :goto_if_true, 7, :hello, :goto, 4]
     #ic.exceptions = [[0, 3, 5], [4, 4, 9], [1, 2, 4], [0, 9, 10], [5, 6, 7], [1, 4, 5]]
-    ic.lines = [[0, 3, 5], [4, 4, 9], [1, 2, 4], [0, 9, 10], [5, 6, 7], [1, 4, 5]]
+    ic.lines = [0, 5, 4, 4, 9, 4, 1, 4, 5, 0, 10, 9, 5, 7, 7, 1, 5, 4, 10]
 
     ic.swap(5)
     raise "fail 74.0" unless
@@ -821,7 +819,7 @@ class InstructionChanges
     #raise "fail 74.1" unless
     #  ic.exceptions == [[0, 3, 5], [4, 4, 9], [1, 2, 4], [0, 9, 10], [5, 6, 7], [1, 4, 5]]
     raise "fail 74.2" unless
-      ic.lines == [[0, 3, 5], [4, 4, 9], [1, 2, 4], [0, 9, 10], [5, 6, 7], [1, 4, 5]]
+      ic.lines == [0, 5, 4, 4, 9, 4, 1, 4, 5, 0, 10, 9, 5, 7, 7, 1, 5, 4, 10]
 
     ic.swap(1)
     raise "fail 75.0" unless
@@ -829,7 +827,7 @@ class InstructionChanges
     #raise "fail 75.1" unless
     #  ic.exceptions == [[0, 1, 5], [2, 2, 9], [1, 1, 2], [0, 9, 10], [5, 6, 7], [1, 2, 5]]
     raise "fail 75.2" unless
-      ic.lines == [[0, 1, 5], [2, 2, 9], [1, 1, 4], [0, 9, 10], [5, 6, 7], [1, 2, 5]]
+      ic.lines == [0, 5, 2, 4, 9, 4, 1, 4, 5, 0, 10, 9, 5, 7, 7, 1, 5, 4, 10]
 
     ic.swap(1)
     raise "fail 76.0" unless
@@ -837,16 +835,16 @@ class InstructionChanges
     #raise "fail 76.1" unless
     #  ic.exceptions == [[0, 1, 5], [4, 4, 9], [1, 1, 4], [0, 9, 10], [5, 6, 7], [1, 4, 5]]
     raise "fail 76.2" unless
-      ic.lines == [[0, 1, 5], [4, 4, 9], [1, 1, 4], [0, 9, 10], [5, 6, 7], [1, 4, 5]]
+      ic.lines == [0, 5, 4, 4, 9, 4, 1, 4, 5, 0, 10, 9, 5, 7, 7, 1, 5, 4, 10]
 
     ic.iseq = [:foo, 15, :hi, 23, 57, :what]
     #ic.exceptions = [[1, 2, 4]]
-    ic.lines = [[1, 2, 4]]
+    ic.lines = [2, 4, 5]
 
     ic.swap(0)
     raise "fail 76.3" unless ic.iseq == [:hi, 23, 57, :foo, 15, :what]
     #raise "fail 76.4" unless ic.exceptions == [[2, 3, 4]]
-    raise "fail 76.5" unless ic.lines == [[2, 3, 4]]
+    raise "fail 76.5" unless ic.lines == [3, 4, 5]
 
     # why goto denormalization-normalization is needed.
     # in this example the first goto's argument should be frozen since it's equal
@@ -877,12 +875,12 @@ class InstructionChanges
 
     ic.iseq = [:goto, 2, :hi]
     #ic.exceptions = [[0, 1, 2]]
-    ic.lines = [[0, 2, 5]]
+    ic.lines = [0, 5, 2]
 
     ic.insert(0, [])
     raise "fail 82.0" unless ic.iseq == [:goto, 2, :hi]
     #raise "fail 82.1" unless ic.exceptions == [[0, 1, 2]]
-    raise "fail 82.2" unless ic.lines == [[0, 2, 5]]
+    raise "fail 82.2" unless ic.lines == [0, 5, 2]
 
     ic.iseq = [:push_true]
 
