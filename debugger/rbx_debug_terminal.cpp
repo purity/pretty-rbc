@@ -18,9 +18,10 @@ void rtrim(char* str) {
 
 void receive_debug_commands(const char* wfile) {
   FILE* wd;
+  std::string str;
   char out[512];
-  char ssz[512];
-  size_t len_out, len_ssz;
+  char ssz[32];
+  size_t len_out;
 
   printf("[rdt] waiting for user input. press <enter> to poll for message\n");
   fgets(out, 512 - 4, stdin);
@@ -35,17 +36,12 @@ void receive_debug_commands(const char* wfile) {
       return;
     }
 
-    snprintf(ssz, 512 - 4, "%u\n", len_out);
-    len_ssz = strlen(ssz);
+    snprintf(ssz, 32 - 4, "%u\n", len_out);
+    str += ssz;
+    str += out;
 
-    if(fwrite(ssz, 1, len_ssz, wd) < len_ssz) {
-      printf("[rdt] failed to send command. fwrite error 1.\n");
-      fclose(wd);
-      return;
-    }
-
-    if(fwrite(out, 1, len_out, wd) < len_out) {
-      printf("[rdt] failed to send command. fwrite error 2.\n");
+    if(fwrite(str.c_str(), 1, str.size(), wd) < str.size()) {
+      printf("[rdt] failed to send command. fwrite error.\n");
       fclose(wd);
       return;
     }
