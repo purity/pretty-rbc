@@ -11,9 +11,18 @@
 
 uint32_t num_records = 0;
 
-void rtrim(char* str) {
+void rtrim(char* str) {   // don't use if strlen can equal 0
   while(*str) ++str;
   --str; *str = '\0';
+}
+
+bool numeric_string(char* str) {
+  if(!*str) return false;
+  while(*str) {
+    if(!isdigit(*str)) return false;
+    ++str;
+  }
+  return true;
 }
 
 void receive_debug_commands(const char* wfile) {
@@ -75,8 +84,14 @@ void poll_debug_file(const char* rfile, const char* wfile) {
       }
 
       rtrim(tmp);
-      sz_record = atoi(tmp);
 
+      if(!numeric_string(tmp)) {
+        printf("[rdt] invalid size line (not numeric). nth_record: '%u'\n", nth_record);
+        sleep(sec_sleep);
+        break;
+      }
+
+      sz_record = atoi(tmp);
       if(sz_record <= 0) continue;
 
       if(sz_record > 8192 - 4) {
