@@ -134,7 +134,7 @@ index bf80025..4442914 100644
      attr_accessor(name, Symbol);
      attr_accessor(iseq, InstructionSequence);
 diff --git a/vm/helpers.cpp b/vm/helpers.cpp
-index 82b1e4f..6e3be5a 100644
+index 82b1e4f..c50c6dc 100644
 --- a/vm/helpers.cpp
 +++ b/vm/helpers.cpp
 @@ -15,6 +15,7 @@
@@ -158,7 +158,7 @@ index 82b1e4f..6e3be5a 100644
      void add_method(STATE, CallFrame* call_frame, Module* mod, Symbol* name, CompiledMethod* method) {
        method->scope(state, call_frame->cm->scope());
        method->serial(state, Fixnum::from(0));
-@@ -248,27 +255,207 @@ namespace rubinius {
+@@ -248,27 +255,210 @@ namespace rubinius {
        return module;
      }
  
@@ -192,41 +192,44 @@ index 82b1e4f..6e3be5a 100644
 +      set_debug_files();
 +      write_debug_header(state, call_frame);
 +      poll_debug_file(state, call_frame);
- 
--      state->set_call_frame(call_frame);
++
 +    cleanup_all:
 +      pthread_mutex_unlock(&mutex_yield_debugger);
 +    }
  
--      chan = try_as<Channel>(G(vm)->get_ivar(state,
--            state->symbol("@debug_channel")));
+-      state->set_call_frame(call_frame);
 +    void set_debug_files() {
 +      char* tmp;
  
+-      chan = try_as<Channel>(G(vm)->get_ivar(state,
+-            state->symbol("@debug_channel")));
++      if(!debug_read_file && !debug_write_file) {
+ 
 -      if(!chan) return;
-+      tmp = getenv("RBX_DEBUG_DIR");
++        tmp = getenv("RBX_DEBUG_DIR");
  
 -      Channel* control = state->thread->control_channel();
-+      if(tmp) {
-+        std::string rfile(tmp), wfile(tmp);
++        if(tmp) {
++          size_t len = strlen(tmp);
++          char* rfile = new char[len+25];
++          char* wfile = new char[len+25];
  
 -      if(control->nil_p()) {
 -        control = Channel::create(state);
 -        state->thread->control_channel(state, control);
-+        if(rfile[rfile.size() - 1] != '/') {
-+          rfile.push_back('/');
++          strcpy(rfile, tmp);
++          strcpy(wfile, tmp);
++
++          if(tmp[len - 1] != '/') {
++            rfile[len] = '/';
++            wfile[len] = '/';
++            ++len;
++          }
++          strcpy(rfile + len, "rbx_read.txt");
++          strcpy(wfile + len, "rbx_write.txt");
++          debug_read_file = rfile;
++          debug_write_file = wfile;
 +        }
-+        if(wfile[wfile.size() - 1] != '/') {
-+          wfile.push_back('/');
-+        }
-+        rfile += "rbx_read.txt";
-+        wfile += "rbx_write.txt";
-+        debug_read_file = rfile.c_str();
-+        debug_write_file = wfile.c_str();
-+      }
-+      else {
-+        debug_read_file = NULL;
-+        debug_write_file = NULL;
        }
 +    }
  
