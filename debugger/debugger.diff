@@ -134,7 +134,7 @@ index bf80025..4442914 100644
      attr_accessor(name, Symbol);
      attr_accessor(iseq, InstructionSequence);
 diff --git a/vm/helpers.cpp b/vm/helpers.cpp
-index 82b1e4f..5fcd1d2 100644
+index 82b1e4f..6e3be5a 100644
 --- a/vm/helpers.cpp
 +++ b/vm/helpers.cpp
 @@ -15,6 +15,7 @@
@@ -158,7 +158,7 @@ index 82b1e4f..5fcd1d2 100644
      void add_method(STATE, CallFrame* call_frame, Module* mod, Symbol* name, CompiledMethod* method) {
        method->scope(state, call_frame->cm->scope());
        method->serial(state, Fixnum::from(0));
-@@ -248,27 +255,213 @@ namespace rubinius {
+@@ -248,27 +255,207 @@ namespace rubinius {
        return module;
      }
  
@@ -172,7 +172,6 @@ index 82b1e4f..5fcd1d2 100644
 +
      void yield_debugger(STATE, CallFrame* call_frame) {
 -      Channel* chan;
-+      char* input = new char[100];
 +      CompiledMethod* cm = call_frame->cm;
 +      int ip = call_frame->ip - 1;
 +      uint32_t num_ops = cm->iseq()->opcodes()->num_fields();
@@ -188,26 +187,32 @@ index 82b1e4f..5fcd1d2 100644
 +      else {
 +        cm->breakpoints = new uint8_t[num_ops];   // optimize this to 2 bits
 +        memset(cm->breakpoints, 0, num_ops);      // or so per opcode
-+        cm->breakpoints[ip] = 1;
 +      }
 +
 +      set_debug_files();
 +      write_debug_header(state, call_frame);
 +      poll_debug_file(state, call_frame);
-+
+ 
+-      state->set_call_frame(call_frame);
 +    cleanup_all:
 +      pthread_mutex_unlock(&mutex_yield_debugger);
-+      delete[] input;
 +    }
-+
+ 
+-      chan = try_as<Channel>(G(vm)->get_ivar(state,
+-            state->symbol("@debug_channel")));
 +    void set_debug_files() {
 +      char* tmp;
-+
+ 
+-      if(!chan) return;
 +      tmp = getenv("RBX_DEBUG_DIR");
-+
+ 
+-      Channel* control = state->thread->control_channel();
 +      if(tmp) {
 +        std::string rfile(tmp), wfile(tmp);
-+
+ 
+-      if(control->nil_p()) {
+-        control = Channel::create(state);
+-        state->thread->control_channel(state, control);
 +        if(rfile[rfile.size() - 1] != '/') {
 +          rfile.push_back('/');
 +        }
@@ -222,9 +227,10 @@ index 82b1e4f..5fcd1d2 100644
 +      else {
 +        debug_read_file = NULL;
 +        debug_write_file = NULL;
-+      }
+       }
 +    }
-+
+ 
+-      sassert(chan->has_readers_p());
 +    void write_debug_record(const char* out) {
 +      FILE* wd;
 +      char ssz[32];
@@ -275,41 +281,31 @@ index 82b1e4f..5fcd1d2 100644
 +          str += tmp;
 +        }
 +      }
- 
--      state->set_call_frame(call_frame);
++
 +      if(cm->name() && !cm->name()->nil_p()) {
 +        snprintf(tmp, 2048 - 4, "        method name: '%s'\n", cm->name()->c_str(state));
 +        str += tmp;
 +      }
- 
--      chan = try_as<Channel>(G(vm)->get_ivar(state,
--            state->symbol("@debug_channel")));
++
 +      if(!cm->backend_method_) {
 +        snprintf(tmp, 2048 - 4, "        backend_method_ is NULL\n");
 +        str += tmp;
 +      }
  
--      if(!chan) return;
+-      chan->send(state, state->thread.get());
+-      control->receive(state, call_frame);
 +      write_debug_record(str.c_str());
 +    }
- 
--      Channel* control = state->thread->control_channel();
++
 +    void poll_debug_file(STATE, CallFrame* call_frame) {
 +      FILE* rd;
 +      uint32_t nth_record, sec_sleep = 10;
 +      int sz_record;
 +      char tmp[1024];
 +      bool done = false;
- 
--      if(control->nil_p()) {
--        control = Channel::create(state);
--        state->thread->control_channel(state, control);
-+      if(!debug_read_file) {
-+        sleep(sec_sleep);
-+        return;
-       }
- 
--      sassert(chan->has_readers_p());
++
++      if(!debug_read_file) return;
++
 +      while(1) {
 +
 +        if((rd = fopen(debug_read_file, "r")) == NULL) {
@@ -335,9 +331,7 @@ index 82b1e4f..5fcd1d2 100644
 +
 +          sz_record = atoi(tmp);
 +          if(sz_record <= 0) continue;
- 
--      chan->send(state, state->thread.get());
--      control->receive(state, call_frame);
++
 +          if(sz_record > 1024 - 4) {
 +            sleep(sec_sleep);
 +            break;
