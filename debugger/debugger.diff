@@ -134,7 +134,7 @@ index bf80025..4442914 100644
      attr_accessor(name, Symbol);
      attr_accessor(iseq, InstructionSequence);
 diff --git a/vm/helpers.cpp b/vm/helpers.cpp
-index 82b1e4f..e58e75b 100644
+index 82b1e4f..5fcd1d2 100644
 --- a/vm/helpers.cpp
 +++ b/vm/helpers.cpp
 @@ -15,6 +15,7 @@
@@ -145,28 +145,34 @@ index 82b1e4f..e58e75b 100644
  
  #include "vm.hpp"
  #include "object_utils.hpp"
-@@ -22,6 +23,11 @@
+@@ -22,6 +23,12 @@
  
  namespace rubinius {
    namespace Helpers {
 +
 +    pthread_mutex_t mutex_yield_debugger;
 +    uint32_t num_debug_records = 0;
-+    char* debug_dir = NULL;
++    const char* debug_read_file = NULL;
++    const char* debug_write_file = NULL;
 +
      void add_method(STATE, CallFrame* call_frame, Module* mod, Symbol* name, CompiledMethod* method) {
        method->scope(state, call_frame->cm->scope());
        method->serial(state, Fixnum::from(0));
-@@ -248,27 +254,80 @@ namespace rubinius {
+@@ -248,27 +255,213 @@ namespace rubinius {
        return module;
      }
  
-+    void print_debug_header(STATE, Object* self, CompiledMethod* cm, int ip);
++    void set_debug_files();
++    void write_debug_record(const char* out);
++    void write_debug_header(STATE, CallFrame* call_frame);
++    bool execute_debug_command(STATE, CallFrame* call_frame, const char* cmd);
++    void poll_debug_file(STATE, CallFrame* call_frame);
++    void rtrim(char* str);
++    bool numeric_string(char* str);
 +
      void yield_debugger(STATE, CallFrame* call_frame) {
 -      Channel* chan;
 +      char* input = new char[100];
-+      Object* self = call_frame->scope->self();
 +      CompiledMethod* cm = call_frame->cm;
 +      int ip = call_frame->ip - 1;
 +      uint32_t num_ops = cm->iseq()->opcodes()->num_fields();
@@ -184,31 +190,71 @@ index 82b1e4f..e58e75b 100644
 +        memset(cm->breakpoints, 0, num_ops);      // or so per opcode
 +        cm->breakpoints[ip] = 1;
 +      }
- 
--      state->set_call_frame(call_frame);
-+      print_debug_header(state, self, cm, ip);
- 
--      chan = try_as<Channel>(G(vm)->get_ivar(state,
--            state->symbol("@debug_channel")));
-+      cm->breakpoints[ip] = 0;
- 
--      if(!chan) return;
++
++      set_debug_files();
++      write_debug_header(state, call_frame);
++      poll_debug_file(state, call_frame);
++
 +    cleanup_all:
 +      pthread_mutex_unlock(&mutex_yield_debugger);
 +      delete[] input;
 +    }
- 
--      Channel* control = state->thread->control_channel();
-+    void print_debug_header(STATE, Object* self, CompiledMethod* cm, int ip) {
++
++    void set_debug_files() {
++      char* tmp;
++
++      tmp = getenv("RBX_DEBUG_DIR");
++
++      if(tmp) {
++        std::string rfile(tmp), wfile(tmp);
++
++        if(rfile[rfile.size() - 1] != '/') {
++          rfile.push_back('/');
++        }
++        if(wfile[wfile.size() - 1] != '/') {
++          wfile.push_back('/');
++        }
++        rfile += "rbx_read.txt";
++        wfile += "rbx_write.txt";
++        debug_read_file = rfile.c_str();
++        debug_write_file = wfile.c_str();
++      }
++      else {
++        debug_read_file = NULL;
++        debug_write_file = NULL;
++      }
++    }
++
++    void write_debug_record(const char* out) {
++      FILE* wd;
++      char ssz[32];
++      std::string str;
++
++      if(!debug_write_file) return;
++      if((wd = fopen(debug_write_file, "a")) == NULL) return;
++
++      snprintf(ssz, 32 - 4, "%u\n", strlen(out));
++      str += ssz;
++      str += out;
++
++      fwrite(str.c_str(), 1, str.size(), wd);
++      fclose(wd);
++    }
++
++    void write_debug_header(STATE, CallFrame* call_frame) {
++      Object* self = call_frame->scope->self();
++      CompiledMethod* cm = call_frame->cm;
++      int ip = call_frame->ip - 1;
 +      std::string str;
 +      char tmp[2048];
 +      Tuple* ops = cm->iseq()->opcodes();
 +      opcode op = ops->at(state, ip + 1)->nil_p() ? 0 :
 +          static_cast<Fixnum*>(ops->at(state, ip + 1))->to_native();
 +
-+      snprintf(tmp, 2048 - 4, "[debug] thread id: %p, self pointer: %p,\n"\
++      snprintf(tmp, 2048 - 4, "[debug] process id: %p, thread id: %p,\n"\
++                              "        self pointer: %p,\n"\
 +                              "        ip: %d, instruction: '%s'\n",
-+          (void*)pthread_self(), self, ip + 1,
++          (void*)getpid(), (void*)pthread_self(), self, ip + 1,
 +          InstructionSequence::get_instruction_name(op));
 +      str += tmp;
 +
@@ -230,23 +276,111 @@ index 82b1e4f..e58e75b 100644
 +        }
 +      }
  
--      if(control->nil_p()) {
--        control = Channel::create(state);
--        state->thread->control_channel(state, control);
+-      state->set_call_frame(call_frame);
 +      if(cm->name() && !cm->name()->nil_p()) {
 +        snprintf(tmp, 2048 - 4, "        method name: '%s'\n", cm->name()->c_str(state));
 +        str += tmp;
-       }
++      }
  
--      sassert(chan->has_readers_p());
+-      chan = try_as<Channel>(G(vm)->get_ivar(state,
+-            state->symbol("@debug_channel")));
 +      if(!cm->backend_method_) {
 +        snprintf(tmp, 2048 - 4, "        backend_method_ is NULL\n");
 +        str += tmp;
 +      }
  
+-      if(!chan) return;
++      write_debug_record(str.c_str());
++    }
+ 
+-      Channel* control = state->thread->control_channel();
++    void poll_debug_file(STATE, CallFrame* call_frame) {
++      FILE* rd;
++      uint32_t nth_record, sec_sleep = 10;
++      int sz_record;
++      char tmp[1024];
++      bool done = false;
+ 
+-      if(control->nil_p()) {
+-        control = Channel::create(state);
+-        state->thread->control_channel(state, control);
++      if(!debug_read_file) {
++        sleep(sec_sleep);
++        return;
+       }
+ 
+-      sassert(chan->has_readers_p());
++      while(1) {
++
++        if((rd = fopen(debug_read_file, "r")) == NULL) {
++          sleep(sec_sleep);
++          continue;
++        }
++
++        nth_record = 0;
++
++        while(1) {
++
++          if(fgets(tmp, 1024 - 4, rd) == NULL) {
++            sleep(sec_sleep);
++            break;
++          }
++
++          rtrim(tmp);
++
++          if(!numeric_string(tmp)) {
++            sleep(sec_sleep);
++            break;
++          }
++
++          sz_record = atoi(tmp);
++          if(sz_record <= 0) continue;
+ 
 -      chan->send(state, state->thread.get());
 -      control->receive(state, call_frame);
-+      printf(str.c_str());
++          if(sz_record > 1024 - 4) {
++            sleep(sec_sleep);
++            break;
++          }
++
++          tmp[sz_record] = '\0';
++          if(fread(tmp, 1, (size_t)sz_record, rd) < (size_t)sz_record) {
++            sleep(sec_sleep);
++            break;
++          }
++
++          if(nth_record >= num_debug_records) {
++            done = execute_debug_command(state, call_frame, tmp);
++            ++num_debug_records;
++          }
++
++          ++nth_record;
++        }
++
++        fclose(rd);
++        if(done) return;
++      }
++    }
++
++    bool execute_debug_command(STATE, CallFrame* call_frame, const char* cmd) {
++      std::string str(cmd);
++      str.push_back('\n');
++      write_debug_record(str.c_str());
++      return true;
++    }
++
++    void rtrim(char* str) {   // don't use if strlen can equal 0
++      while(*str) ++str;
++      --str; *str = '\0';
++    }
++
++    bool numeric_string(char* str) {
++      if(!*str) return false;
++      while(*str) {
++        if(!isdigit(*str)) return false;
++        ++str;
++      }
++      return true;
      }
    }
  }
