@@ -11,6 +11,14 @@
 
 uint32_t num_records = 0;
 
+const char* commands_legend =
+    "[rdt] Commands:\n"\
+    "      <enter> - poll for new message.\n"\
+    "      [pid] next (n) - set breakpoint after next instruction (if available) and execute.\n"\
+    "      [pid] step (s) - pause at the beginning of the next method that's called.\n"\
+    "      [pid] run (r) - pause at the next user-supplied breakpoint.\n"\
+    "";
+
 void rtrim(char* str) {   // don't use if strlen can equal 0
   while(*str) ++str;
   --str; *str = '\0';
@@ -32,7 +40,7 @@ void receive_debug_commands(const char* wfile) {
   char ssz[32];
   size_t len_out;
 
-  printf("[rdt] waiting for user input. press <enter> to poll for message\n");
+  printf(commands_legend);
   fgets(out, 512 - 4, stdin);
 
   rtrim(out);
@@ -56,7 +64,7 @@ void receive_debug_commands(const char* wfile) {
     }
 
     fclose(wd);
-    sleep(5);
+    sleep(6);
   }
 }
 
