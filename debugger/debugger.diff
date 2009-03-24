@@ -157,7 +157,7 @@ index 495291a..c0bf9f4 100644
        Exception::errno_error(state, "fork() failed!");
      }
 diff --git a/vm/helpers.cpp b/vm/helpers.cpp
-index 82b1e4f..25349b7 100644
+index 82b1e4f..cbe3247 100644
 --- a/vm/helpers.cpp
 +++ b/vm/helpers.cpp
 @@ -15,6 +15,7 @@
@@ -191,7 +191,7 @@ index 82b1e4f..25349b7 100644
      void add_method(STATE, CallFrame* call_frame, Module* mod, Symbol* name, CompiledMethod* method) {
        method->scope(state, call_frame->cm->scope());
        method->serial(state, Fixnum::from(0));
-@@ -248,27 +265,302 @@ namespace rubinius {
+@@ -248,27 +265,303 @@ namespace rubinius {
        return module;
      }
  
@@ -350,7 +350,6 @@ index 82b1e4f..25349b7 100644
 +      uint32_t nth_record, sec_sleep = 2;
 +      int sz_record;
 +      char tmp[1024];
-+      bool done = false;
 +
 +      if(!debug_read_file) return;
 +
@@ -394,8 +393,11 @@ index 82b1e4f..25349b7 100644
 -      chan = try_as<Channel>(G(vm)->get_ivar(state,
 -            state->symbol("@debug_channel")));
 +          if(nth_record >= num_debug_records) {
-+            done = execute_debug_command(state, call_frame, tmp);
 +            ++num_debug_records;
++            if(execute_debug_command(state, call_frame, tmp)) {
++              fclose(rd);
++              return;
++            }
 +          }
  
 -      if(!chan) return;
@@ -403,7 +405,6 @@ index 82b1e4f..25349b7 100644
 +        }
 +
 +        fclose(rd);
-+        if(done) return;
 +      }
 +    }
 +
@@ -439,7 +440,7 @@ index 82b1e4f..25349b7 100644
 +      }
  
 -      Channel* control = state->thread->control_channel();
-+      return true;
++      return true;  // successful command
 +    }
  
 -      if(control->nil_p()) {
