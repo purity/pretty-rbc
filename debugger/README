@@ -3,4 +3,5 @@
 
 * if you're at the last instruction in a method and you enter the 'next' command, then
   the debugger behaves like the 'step' command was issued instead
+* the zero pid applies the command to all the processes
 

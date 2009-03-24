@@ -157,7 +157,7 @@ index 495291a..c0bf9f4 100644
        Exception::errno_error(state, "fork() failed!");
      }
 diff --git a/vm/helpers.cpp b/vm/helpers.cpp
-index 82b1e4f..15bf138 100644
+index 82b1e4f..25349b7 100644
 --- a/vm/helpers.cpp
 +++ b/vm/helpers.cpp
 @@ -15,6 +15,7 @@
@@ -418,7 +418,7 @@ index 82b1e4f..15bf138 100644
 +      uintptr_t pid;
 +
 +      cmd = extract_pid(cmd, &pid);
-+      if(pid != (uintptr_t)getpid()) return false;
++      if(pid != 0 && pid != (uintptr_t)getpid()) return false;
 +
 +      if(strcmp(cmd, "next") == 0 || strcmp(cmd, "n") == 0) {
 +        if(ip + ins_size + 1 < num_ops) {
