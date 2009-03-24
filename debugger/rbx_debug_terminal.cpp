@@ -40,7 +40,7 @@ void receive_debug_commands(const char* wfile) {
   char ssz[32];
   size_t len_out;
 
-  printf(commands_legend);
+  printf("[rdt] waiting for user input...\n");
   fgets(out, 512 - 4, stdin);
 
   rtrim(out);
@@ -64,7 +64,7 @@ void receive_debug_commands(const char* wfile) {
     }
 
     fclose(wd);
-    sleep(6);
+    sleep(5);
   }
 }
 
@@ -145,6 +145,8 @@ int main(int argc, char** argv) {
   rfile += "rbx_write.txt";
   wfile = dir;
   wfile += "rbx_read.txt";
+
+  printf(commands_legend);
 
   poll_debug_file(rfile.c_str(), wfile.c_str());
 
