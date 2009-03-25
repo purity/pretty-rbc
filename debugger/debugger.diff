@@ -71,7 +71,7 @@ index 43ce2a4..c2cbdf0 100644
          new("!RBIX", 0, "x").encode_to(f, cm)
        end
 diff --git a/kernel/compiler/generator.rb b/kernel/compiler/generator.rb
-index 23e05a1..e8238ef 100644
+index 9e79d43..bf5b1b6 100644
 --- a/kernel/compiler/generator.rb
 +++ b/kernel/compiler/generator.rb
 @@ -220,6 +220,9 @@ class Compiler
@@ -109,7 +109,7 @@ index 1126ad1..60c5e0a 100644
        length = 12 # length of first lines in numbered_lines.txt
  
 diff --git a/vm/builtin/compiledmethod.cpp b/vm/builtin/compiledmethod.cpp
-index db093fc..6cf4e5e 100644
+index a262e36..453bbf2 100644
 --- a/vm/builtin/compiledmethod.cpp
 +++ b/vm/builtin/compiledmethod.cpp
 @@ -33,6 +33,7 @@ namespace rubinius {
@@ -121,7 +121,7 @@ index db093fc..6cf4e5e 100644
      return cm;
    }
 diff --git a/vm/builtin/compiledmethod.hpp b/vm/builtin/compiledmethod.hpp
-index bf80025..4442914 100644
+index 1a81012..63adaec 100644
 --- a/vm/builtin/compiledmethod.hpp
 +++ b/vm/builtin/compiledmethod.hpp
 @@ -37,7 +37,7 @@ namespace rubinius {
@@ -133,31 +133,8 @@ index bf80025..4442914 100644
  
      attr_accessor(name, Symbol);
      attr_accessor(iseq, InstructionSequence);
-diff --git a/vm/builtin/system.cpp b/vm/builtin/system.cpp
-index 495291a..c0bf9f4 100644
---- a/vm/builtin/system.cpp
-+++ b/vm/builtin/system.cpp
-@@ -19,6 +19,7 @@
- #include "objectmemory.hpp"
- #include "global_cache.hpp"
- #include "config_parser.hpp"
-+#include "helpers.hpp"
- 
- #include "builtin/array.hpp"
- #include "builtin/exception.hpp"
-@@ -149,8 +150,9 @@ namespace rubinius {
- 
-   Fixnum* System::vm_fork(VM* state)
-   {
-+    pthread_mutex_lock(&rubinius::Helpers::mutex_yield_debugger);
-     int result = ::fork();
--
-+    pthread_mutex_unlock(&rubinius::Helpers::mutex_yield_debugger);
-     if ( -1 == result ) {
-       Exception::errno_error(state, "fork() failed!");
-     }
 diff --git a/vm/helpers.cpp b/vm/helpers.cpp
-index 82b1e4f..cbe3247 100644
+index 30556c9..e9ef8f6 100644
 --- a/vm/helpers.cpp
 +++ b/vm/helpers.cpp
 @@ -15,6 +15,7 @@
@@ -191,7 +168,7 @@ index 82b1e4f..cbe3247 100644
      void add_method(STATE, CallFrame* call_frame, Module* mod, Symbol* name, CompiledMethod* method) {
        method->scope(state, call_frame->cm->scope());
        method->serial(state, Fixnum::from(0));
-@@ -248,27 +265,303 @@ namespace rubinius {
+@@ -280,27 +297,304 @@ namespace rubinius {
        return module;
      }
  
@@ -308,8 +285,9 @@ index 82b1e4f..cbe3247 100644
 +
 +      snprintf(tmp, 2048 - 4, "[debug] process id: %p, thread id: %p,\n"\
 +                              "        self pointer: %p, method pointer: %p,\n"\
-+                              "        ip: %d, instruction: '%s'\n",
-+          (void*)getpid(), (void*)pthread_self(), self, cm, ip + 1,
++                              "        sp: %d, ip: %d, instruction: '%s'\n",
++          (void*)getpid(), (void*)pthread_self(), self, cm,
++          call_frame->calculate_sp(), ip + 1,
 +          InstructionSequence::get_instruction_name(op));
 +      str += tmp;
 +
@@ -421,17 +399,17 @@ index 82b1e4f..cbe3247 100644
 +      cmd = extract_pid(cmd, &pid);
 +      if(pid != 0 && pid != (uintptr_t)getpid()) return false;
 +
-+      if(strcmp(cmd, "next") == 0 || strcmp(cmd, "n") == 0) {
++      if(strcmp(cmd, "n") == 0) {
 +        if(ip + ins_size + 1 < num_ops) {
 +          cm->breakpoints[ip + ins_size + 1] |= NEXT_BREAKPOINT;
 +          debug_options |= IGNORE_STEP_BREAKPOINT;
 +        }
 +        debug_options |= IGNORE_CUSTOM_BREAKPOINT;
 +      }
-+      else if(strcmp(cmd, "step") == 0 || strcmp(cmd, "s") == 0) {
++      else if(strcmp(cmd, "s") == 0) {
 +        debug_options |= IGNORE_CUSTOM_BREAKPOINT;
 +      }
-+      else if(strcmp(cmd, "run") == 0 || strcmp(cmd, "r") == 0) {
++      else if(strcmp(cmd, "r") == 0) {
 +        debug_options |= IGNORE_STEP_BREAKPOINT;
 +      }
 +      else {
@@ -507,26 +485,3 @@ index 82b1e4f..cbe3247 100644
      }
    }
  }
-diff --git a/vm/helpers.hpp b/vm/helpers.hpp
-index 5a0c3bf..52b94c2 100644
---- a/vm/helpers.hpp
-+++ b/vm/helpers.hpp
-@@ -1,6 +1,8 @@
- #ifndef RBX_HELPERS_HPP
- #define RBX_HELPERS_HPP
- 
-+#include <pthread.h>
-+
- namespace rubinius {
-   class CallFrame;
-   class Module;
-@@ -12,6 +14,9 @@ namespace rubinius {
-   class LookupTableAssociation;
- 
-   namespace Helpers {
-+
-+    extern pthread_mutex_t mutex_yield_debugger;
-+
-     void add_method(VM*, CallFrame* call_frame, Module* mod, Symbol* name, CompiledMethod* meth);
-     void attach_method(VM*, CallFrame* call_frame, Object* obj, Symbol* name, CompiledMethod* meth);
- 
