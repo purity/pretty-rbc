@@ -134,7 +134,7 @@ index 1a81012..63adaec 100644
      attr_accessor(name, Symbol);
      attr_accessor(iseq, InstructionSequence);
 diff --git a/vm/helpers.cpp b/vm/helpers.cpp
-index 30556c9..e9ef8f6 100644
+index 30556c9..5b1f050 100644
 --- a/vm/helpers.cpp
 +++ b/vm/helpers.cpp
 @@ -15,6 +15,7 @@
@@ -145,7 +145,7 @@ index 30556c9..e9ef8f6 100644
  
  #include "vm.hpp"
  #include "object_utils.hpp"
-@@ -22,6 +23,22 @@
+@@ -22,6 +23,24 @@
  
  namespace rubinius {
    namespace Helpers {
@@ -155,6 +155,8 @@ index 30556c9..e9ef8f6 100644
 +    uint32_t debug_options = 0;
 +    const char* debug_read_file = NULL;
 +    const char* debug_write_file = NULL;
++    uint64_t instruction_count = 0;
++    uint64_t bp_instruction_count = 0;
 +
 +    // breakpoint types
 +    #define NEXT_BREAKPOINT 1
@@ -168,7 +170,7 @@ index 30556c9..e9ef8f6 100644
      void add_method(STATE, CallFrame* call_frame, Module* mod, Symbol* name, CompiledMethod* method) {
        method->scope(state, call_frame->cm->scope());
        method->serial(state, Fixnum::from(0));
-@@ -280,27 +297,304 @@ namespace rubinius {
+@@ -280,27 +299,369 @@ namespace rubinius {
        return module;
      }
  
@@ -178,6 +180,7 @@ index 30556c9..e9ef8f6 100644
 +    bool execute_debug_command(STATE, CallFrame* call_frame, const char* cmd);
 +    void poll_debug_file(STATE, CallFrame* call_frame);
 +    const char* extract_pid(const char* cmd, uintptr_t* pid);
++    const char* extract_number(const char* cmd, uint32_t* num);
 +    void rtrim(char* str);
 +    bool numeric_string(char* str);
 +
@@ -192,20 +195,29 @@ index 30556c9..e9ef8f6 100644
 +
 +      pthread_mutex_lock(&mutex_yield_debugger);
 +
++      ++instruction_count;
++
 +      if(!cm->breakpoints) {
 +        cm->breakpoints = new uint8_t[num_ops];   // optimize this to 3 bits
 +        memset(cm->breakpoints, 0, num_ops);      // per opcode
 +        cm->breakpoints[0] = STEP_BREAKPOINT;     /* never unset this */
 +      }
 +
-+      if(cm->breakpoints[ip] != 0 &&
++      if(instruction_count == bp_instruction_count ||
++            (cm->breakpoints[ip] != 0 &&
 +            ((cm->breakpoints[ip] & NEXT_BREAKPOINT) ||
 +            ((cm->breakpoints[ip] & STEP_BREAKPOINT) &&
 +            !(debug_options & IGNORE_STEP_BREAKPOINT)) ||
 +            ((cm->breakpoints[ip] & CUSTOM_BREAKPOINT) &&
-+            !(debug_options & IGNORE_CUSTOM_BREAKPOINT)))) {
++            !(debug_options & IGNORE_CUSTOM_BREAKPOINT))))) {
 +
-+        if(cm->breakpoints[ip] & NEXT_BREAKPOINT) {
++        if(instruction_count == bp_instruction_count) {
++          if(debug_options & IGNORE_STEP_BREAKPOINT)
++            debug_options ^= IGNORE_STEP_BREAKPOINT;
++          if(debug_options & IGNORE_CUSTOM_BREAKPOINT)
++            debug_options ^= IGNORE_CUSTOM_BREAKPOINT;
++        }
++        else if(cm->breakpoints[ip] & NEXT_BREAKPOINT) {
 +          cm->breakpoints[ip] ^= NEXT_BREAKPOINT;
 +          if(debug_options & IGNORE_STEP_BREAKPOINT)
 +            debug_options ^= IGNORE_STEP_BREAKPOINT;
@@ -235,16 +247,20 @@ index 30556c9..e9ef8f6 100644
 +      if(!debug_read_file && !debug_write_file) {
 +
 +        tmp = getenv("RBX_DEBUG_DIR");
-+
+ 
+-      state->set_call_frame(call_frame);
 +        if(tmp) {
 +          size_t len = strlen(tmp);
 +          char* rfile = new char[len+25];
 +          char* wfile = new char[len+25];
-+
+ 
+-      chan = try_as<Channel>(G(vm)->get_ivar(state,
+-            state->symbol("@debug_channel")));
 +          strcpy(rfile, tmp);
 +          strcpy(wfile, tmp);
-+
-+          if(tmp[len - 1] != '/') {
+ 
+-      if(!chan) return;
++          if(len > 0 && tmp[len - 1] != '/') {
 +            rfile[len] = '/';
 +            wfile[len] = '/';
 +            ++len;
@@ -283,8 +299,8 @@ index 30556c9..e9ef8f6 100644
 +      opcode op = ops->at(state, ip + 1)->nil_p() ? 0 :
 +          static_cast<Fixnum*>(ops->at(state, ip + 1))->to_native();
 +
-+      snprintf(tmp, 2048 - 4, "[debug] process id: %p, thread id: %p,\n"\
-+                              "        self pointer: %p, method pointer: %p,\n"\
++      snprintf(tmp, 2048 - 4, "[debug] process id: %p, thread id: %p,\n"
++                              "        self pointer: %p, method pointer: %p,\n"
 +                              "        sp: %d, ip: %d, instruction: '%s'\n",
 +          (void*)getpid(), (void*)pthread_self(), self, cm,
 +          call_frame->calculate_sp(), ip + 1,
@@ -309,17 +325,21 @@ index 30556c9..e9ef8f6 100644
 +        }
 +      }
  
--      state->set_call_frame(call_frame);
+-      Channel* control = state->thread->control_channel();
 +      if(cm->name() && !cm->name()->nil_p()) {
 +        snprintf(tmp, 2048 - 4, "        method name: '%s'\n", cm->name()->c_str(state));
 +        str += tmp;
 +      }
-+
+ 
+-      if(control->nil_p()) {
+-        control = Channel::create(state);
+-        state->thread->control_channel(state, control);
 +      if(!cm->backend_method_) {
 +        snprintf(tmp, 2048 - 4, "        backend_method_ is NULL\n");
 +        str += tmp;
-+      }
-+
+       }
+ 
+-      sassert(chan->has_readers_p());
 +      write_debug_record(str.c_str());
 +    }
 +
@@ -341,7 +361,9 @@ index 30556c9..e9ef8f6 100644
 +        nth_record = 0;
 +
 +        while(1) {
-+
+ 
+-      chan->send(state, state->thread.get());
+-      control->receive(state, call_frame);
 +          if(fgets(tmp, 1024 - 4, rd) == NULL) {
 +            sleep(sec_sleep);
 +            break;
@@ -367,9 +389,7 @@ index 30556c9..e9ef8f6 100644
 +            sleep(sec_sleep);
 +            break;
 +          }
- 
--      chan = try_as<Channel>(G(vm)->get_ivar(state,
--            state->symbol("@debug_channel")));
++
 +          if(nth_record >= num_debug_records) {
 +            ++num_debug_records;
 +            if(execute_debug_command(state, call_frame, tmp)) {
@@ -377,8 +397,7 @@ index 30556c9..e9ef8f6 100644
 +              return;
 +            }
 +          }
- 
--      if(!chan) return;
++
 +          ++nth_record;
 +        }
 +
@@ -412,18 +431,26 @@ index 30556c9..e9ef8f6 100644
 +      else if(strcmp(cmd, "r") == 0) {
 +        debug_options |= IGNORE_STEP_BREAKPOINT;
 +      }
++      else if(strncmp(cmd, "bpc", 3) == 0) {
++        uint32_t offset;
++        if(extract_number(cmd, &offset)) {
++          bp_instruction_count = instruction_count + offset;
++          debug_options |= IGNORE_STEP_BREAKPOINT;
++          debug_options |= IGNORE_CUSTOM_BREAKPOINT;
++        }
++        else {
++          write_debug_record("[debug] offset not given for bpc command\n");
++          return false;
++        }
++      }
 +      else {
 +        write_debug_record("[debug] command not recognized\n");
 +        return false;
 +      }
- 
--      Channel* control = state->thread->control_channel();
++
 +      return true;  // successful command
 +    }
- 
--      if(control->nil_p()) {
--        control = Channel::create(state);
--        state->thread->control_channel(state, control);
++
 +    // expects the pid to be at the beginning of the string
 +    // and to be hex characters (with or without a '0x' prefix).
 +    // returns the start of the command after the pid
@@ -443,9 +470,8 @@ index 30556c9..e9ef8f6 100644
 +          break;
 +        }
 +        ++p;
-       }
- 
--      sassert(chan->has_readers_p());
++      }
++
 +      if(hex >= cmd && *hex) {
 +        do {
 +          if(*hex >= '0' && *hex <= '9') {
@@ -464,10 +490,51 @@ index 30556c9..e9ef8f6 100644
 +        } while(hex >= cmd);
 +        return strt;
 +      }
- 
--      chan->send(state, state->thread.get());
--      control->receive(state, call_frame);
++
 +      return cmd;
++    }
++
++    // base 10 natural number delimited by string boundary and/or spaces
++    //
++    const char* extract_number(const char* cmd, uint32_t* num) {
++      const char* rght = cmd;
++      const char* lft = NULL;
++      uint32_t digits = 0;
++      uint32_t pow10 = 1;
++      *num = 0;
++
++      while(*rght) {
++
++        if(*rght == ' ') {
++          if(digits > 0) {
++            while(*rght == ' ') ++rght;
++            break;
++          }
++        }
++        else {
++          if(isdigit(*rght) &&
++                (rght == cmd || isdigit(*(rght - 1)) || *(rght - 1) == ' ')) {
++            ++digits;
++            lft = rght;
++          }
++          else {
++            digits = 0;
++          }
++        }
++
++        ++rght;
++      }
++
++      if(digits > 0) {
++        while(lft >= cmd && isdigit(*lft)) {
++          *num += (uint32_t)(*lft - '0') * pow10;
++          pow10 *= 10;
++          --lft;
++        }
++        return rght;
++      }
++
++      return NULL;    // not found
 +    }
 +
 +    void rtrim(char* str) {   // don't use if strlen can equal 0

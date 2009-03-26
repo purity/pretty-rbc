@@ -12,23 +12,25 @@
 uint32_t num_records = 0;
 
 const char* commands_legend =
-    "[rdt] Commands:\n"\
-    "      <enter> - poll for new message.\n"\
-    "      [pid] next (n) - set breakpoint after next instruction (if available) and execute.\n"\
-    "      [pid] step (s) - pause at the beginning of the next method that's called.\n"\
-    "      [pid] run (r) - pause at the next user-supplied breakpoint.\n"\
-    "      [pid] breakpoint [class path] [method] (bpm) - \n"\
-    "              toggle the breakpoint flag at the first instruction of the\n"\
+    "[rdt] Commands:\n"
+    "      <enter> - poll for new message.\n"
+    "      [pid] next (n) - set breakpoint after next instruction (if available) and execute.\n"
+    "      [pid] step (s) - pause at the beginning of the next method that's called.\n"
+    "      [pid] run (r) - pause at the next user-supplied breakpoint.\n"
+    "      [pid] breakpoint (bpm) [class path] [method] - \n"
+    "              toggle the breakpoint flag at the first instruction of the\n"
     "              specified method.\n"
-    "      [pid] breakpoint [ip] (bpi) - \n"\
-    "              toggle the breakpoint flag at the specified instruction in the\n"\
+    "      [pid] breakpoint (bpi) [ip] - \n"
+    "              toggle the breakpoint flag at the specified instruction in the\n"
     "              currently executing method.\n"
     "      [pid] breakpoint (bpr) - toggle the breakpoint flag at the sender's return address.\n"
+    "      [pid] breakpoint (bpc) [offset] - \n"
+    "              pause when the instruction count equals current + offset.\n"
     "      [pid] frame (f) - print more call frame information.\n"
     "      [pid] stack (stk) - print contents of the stack.\n"
     "      [pid] locals (l) - print contents of the locals.\n"
-    "      [pid] object-local [index] (ol) - print local object type.\n"
-    "      [pid] object-stack [sp] (os) - print stack object type.\n"
+    "      [pid] object-local (ol) [index] - print local object metadata.\n"
+    "      [pid] object-stack (os) [sp] - print stack object metadata.\n"
     "";
 
 void rtrim(char* str) {   // don't use if strlen can equal 0
