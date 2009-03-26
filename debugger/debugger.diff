@@ -134,7 +134,7 @@ index 1a81012..63adaec 100644
      attr_accessor(name, Symbol);
      attr_accessor(iseq, InstructionSequence);
 diff --git a/vm/helpers.cpp b/vm/helpers.cpp
-index 30556c9..5b1f050 100644
+index 30556c9..7ae4676 100644
 --- a/vm/helpers.cpp
 +++ b/vm/helpers.cpp
 @@ -15,6 +15,7 @@
@@ -170,7 +170,7 @@ index 30556c9..5b1f050 100644
      void add_method(STATE, CallFrame* call_frame, Module* mod, Symbol* name, CompiledMethod* method) {
        method->scope(state, call_frame->cm->scope());
        method->serial(state, Fixnum::from(0));
-@@ -280,27 +299,369 @@ namespace rubinius {
+@@ -280,27 +299,354 @@ namespace rubinius {
        return module;
      }
  
@@ -211,27 +211,12 @@ index 30556c9..5b1f050 100644
 +            ((cm->breakpoints[ip] & CUSTOM_BREAKPOINT) &&
 +            !(debug_options & IGNORE_CUSTOM_BREAKPOINT))))) {
 +
-+        if(instruction_count == bp_instruction_count) {
-+          if(debug_options & IGNORE_STEP_BREAKPOINT)
-+            debug_options ^= IGNORE_STEP_BREAKPOINT;
-+          if(debug_options & IGNORE_CUSTOM_BREAKPOINT)
-+            debug_options ^= IGNORE_CUSTOM_BREAKPOINT;
-+        }
-+        else if(cm->breakpoints[ip] & NEXT_BREAKPOINT) {
++        if(debug_options & IGNORE_STEP_BREAKPOINT)
++          debug_options ^= IGNORE_STEP_BREAKPOINT;
++        if(debug_options & IGNORE_CUSTOM_BREAKPOINT)
++          debug_options ^= IGNORE_CUSTOM_BREAKPOINT;
++        if(cm->breakpoints[ip] & NEXT_BREAKPOINT)
 +          cm->breakpoints[ip] ^= NEXT_BREAKPOINT;
-+          if(debug_options & IGNORE_STEP_BREAKPOINT)
-+            debug_options ^= IGNORE_STEP_BREAKPOINT;
-+          if(debug_options & IGNORE_CUSTOM_BREAKPOINT)
-+            debug_options ^= IGNORE_CUSTOM_BREAKPOINT;
-+        }
-+        else if(cm->breakpoints[ip] & STEP_BREAKPOINT) {
-+          if(debug_options & IGNORE_CUSTOM_BREAKPOINT)
-+            debug_options ^= IGNORE_CUSTOM_BREAKPOINT;
-+        }
-+        else if(cm->breakpoints[ip] & CUSTOM_BREAKPOINT) {
-+          if(debug_options & IGNORE_STEP_BREAKPOINT)
-+            debug_options ^= IGNORE_STEP_BREAKPOINT;
-+        }
 +
 +        set_debug_files();
 +        write_debug_header(state, call_frame);
@@ -247,19 +232,15 @@ index 30556c9..5b1f050 100644
 +      if(!debug_read_file && !debug_write_file) {
 +
 +        tmp = getenv("RBX_DEBUG_DIR");
- 
--      state->set_call_frame(call_frame);
++
 +        if(tmp) {
 +          size_t len = strlen(tmp);
 +          char* rfile = new char[len+25];
 +          char* wfile = new char[len+25];
- 
--      chan = try_as<Channel>(G(vm)->get_ivar(state,
--            state->symbol("@debug_channel")));
++
 +          strcpy(rfile, tmp);
 +          strcpy(wfile, tmp);
- 
--      if(!chan) return;
++
 +          if(len > 0 && tmp[len - 1] != '/') {
 +            rfile[len] = '/';
 +            wfile[len] = '/';
@@ -324,22 +305,17 @@ index 30556c9..5b1f050 100644
 +          str += tmp;
 +        }
 +      }
- 
--      Channel* control = state->thread->control_channel();
++
 +      if(cm->name() && !cm->name()->nil_p()) {
 +        snprintf(tmp, 2048 - 4, "        method name: '%s'\n", cm->name()->c_str(state));
 +        str += tmp;
 +      }
- 
--      if(control->nil_p()) {
--        control = Channel::create(state);
--        state->thread->control_channel(state, control);
++
 +      if(!cm->backend_method_) {
 +        snprintf(tmp, 2048 - 4, "        backend_method_ is NULL\n");
 +        str += tmp;
-       }
- 
--      sassert(chan->has_readers_p());
++      }
++
 +      write_debug_record(str.c_str());
 +    }
 +
@@ -350,9 +326,12 @@ index 30556c9..5b1f050 100644
 +      char tmp[1024];
 +
 +      if(!debug_read_file) return;
-+
+ 
+-      state->set_call_frame(call_frame);
 +      while(1) {
-+
+ 
+-      chan = try_as<Channel>(G(vm)->get_ivar(state,
+-            state->symbol("@debug_channel")));
 +        if((rd = fopen(debug_read_file, "r")) == NULL) {
 +          sleep(sec_sleep);
 +          continue;
@@ -361,9 +340,7 @@ index 30556c9..5b1f050 100644
 +        nth_record = 0;
 +
 +        while(1) {
- 
--      chan->send(state, state->thread.get());
--      control->receive(state, call_frame);
++
 +          if(fgets(tmp, 1024 - 4, rd) == NULL) {
 +            sleep(sec_sleep);
 +            break;
@@ -375,15 +352,20 @@ index 30556c9..5b1f050 100644
 +            sleep(sec_sleep);
 +            break;
 +          }
-+
+ 
+-      if(!chan) return;
 +          sz_record = atoi(tmp);
 +          if(sz_record <= 0) continue;
-+
+ 
+-      Channel* control = state->thread->control_channel();
 +          if(sz_record > 1024 - 4) {
 +            sleep(sec_sleep);
 +            break;
 +          }
-+
+ 
+-      if(control->nil_p()) {
+-        control = Channel::create(state);
+-        state->thread->control_channel(state, control);
 +          tmp[sz_record] = '\0';
 +          if(fread(tmp, 1, (size_t)sz_record, rd) < (size_t)sz_record) {
 +            sleep(sec_sleep);
@@ -402,9 +384,10 @@ index 30556c9..5b1f050 100644
 +        }
 +
 +        fclose(rd);
-+      }
+       }
 +    }
-+
+ 
+-      sassert(chan->has_readers_p());
 +    bool execute_debug_command(STATE, CallFrame* call_frame, const char* cmd) {
 +      int ip = call_frame->ip - 1;
 +      CompiledMethod* cm = call_frame->cm;
@@ -450,7 +433,9 @@ index 30556c9..5b1f050 100644
 +
 +      return true;  // successful command
 +    }
-+
+ 
+-      chan->send(state, state->thread.get());
+-      control->receive(state, call_frame);
 +    // expects the pid to be at the beginning of the string
 +    // and to be hex characters (with or without a '0x' prefix).
 +    // returns the start of the command after the pid

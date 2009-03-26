@@ -25,7 +25,7 @@ const char* commands_legend =
     "              currently executing method.\n"
     "      [pid] breakpoint (bpr) - toggle the breakpoint flag at the sender's return address.\n"
     "      [pid] breakpoint (bpc) [offset] - \n"
-    "              pause when the instruction count equals current + offset.\n"
+    "              pause when the VM instruction count equals current + offset.\n"
     "      [pid] frame (f) - print more call frame information.\n"
     "      [pid] stack (stk) - print contents of the stack.\n"
     "      [pid] locals (l) - print contents of the locals.\n"
