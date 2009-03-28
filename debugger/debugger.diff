@@ -134,7 +134,7 @@ index 1a81012..63adaec 100644
      attr_accessor(name, Symbol);
      attr_accessor(iseq, InstructionSequence);
 diff --git a/vm/helpers.cpp b/vm/helpers.cpp
-index 30556c9..67ab663 100644
+index 30556c9..fa74cf3 100644
 --- a/vm/helpers.cpp
 +++ b/vm/helpers.cpp
 @@ -15,6 +15,7 @@
@@ -145,7 +145,7 @@ index 30556c9..67ab663 100644
  
  #include "vm.hpp"
  #include "object_utils.hpp"
-@@ -22,6 +23,24 @@
+@@ -22,6 +23,25 @@
  
  namespace rubinius {
    namespace Helpers {
@@ -166,11 +166,12 @@ index 30556c9..67ab663 100644
 +    // debug options
 +    #define IGNORE_STEP_BREAKPOINT 1
 +    #define IGNORE_CUSTOM_BREAKPOINT 2
++    #define NO_DEBUG_DIR 4
 +
      void add_method(STATE, CallFrame* call_frame, Module* mod, Symbol* name, CompiledMethod* method) {
        method->scope(state, call_frame->cm->scope());
        method->serial(state, Fixnum::from(0));
-@@ -280,27 +299,382 @@ namespace rubinius {
+@@ -280,27 +300,385 @@ namespace rubinius {
        return module;
      }
  
@@ -192,37 +193,46 @@ index 30556c9..67ab663 100644
 +
 +      // must not call any code that acquires the global_lock
 +      // in the following section so there's no opportunity for deadlock
-+
+ 
+-      state->set_call_frame(call_frame);
 +      pthread_mutex_lock(&mutex_yield_debugger);
+ 
+-      chan = try_as<Channel>(G(vm)->get_ivar(state,
+-            state->symbol("@debug_channel")));
++      if(!(debug_options & NO_DEBUG_DIR)) {
+ 
+-      if(!chan) return;
++        ++instruction_count;
+ 
+-      Channel* control = state->thread->control_channel();
++        if(!cm->breakpoints) {
++          cm->breakpoints = new uint8_t[num_ops];   // optimize this to 3 bits
++          memset(cm->breakpoints, 0, num_ops);      // per opcode
++          cm->breakpoints[0] = STEP_BREAKPOINT;     /* never unset this */
++        }
+ 
+-      if(control->nil_p()) {
+-        control = Channel::create(state);
+-        state->thread->control_channel(state, control);
++        if(instruction_count == bp_instruction_count ||
++              (cm->breakpoints[ip] != 0 &&
++              ((cm->breakpoints[ip] & NEXT_BREAKPOINT) ||
++              ((cm->breakpoints[ip] & STEP_BREAKPOINT) &&
++              !(debug_options & IGNORE_STEP_BREAKPOINT)) ||
++              ((cm->breakpoints[ip] & CUSTOM_BREAKPOINT) &&
++              !(debug_options & IGNORE_CUSTOM_BREAKPOINT))))) {
 +
-+      ++instruction_count;
++          debug_options &= ~IGNORE_STEP_BREAKPOINT;
++          debug_options &= ~IGNORE_CUSTOM_BREAKPOINT;
++          cm->breakpoints[ip] &= ~NEXT_BREAKPOINT;
 +
-+      if(!cm->breakpoints) {
-+        cm->breakpoints = new uint8_t[num_ops];   // optimize this to 3 bits
-+        memset(cm->breakpoints, 0, num_ops);      // per opcode
-+        cm->breakpoints[0] = STEP_BREAKPOINT;     /* never unset this */
-+      }
-+
-+      if(instruction_count == bp_instruction_count ||
-+            (cm->breakpoints[ip] != 0 &&
-+            ((cm->breakpoints[ip] & NEXT_BREAKPOINT) ||
-+            ((cm->breakpoints[ip] & STEP_BREAKPOINT) &&
-+            !(debug_options & IGNORE_STEP_BREAKPOINT)) ||
-+            ((cm->breakpoints[ip] & CUSTOM_BREAKPOINT) &&
-+            !(debug_options & IGNORE_CUSTOM_BREAKPOINT))))) {
-+
-+        if(debug_options & IGNORE_STEP_BREAKPOINT)
-+          debug_options ^= IGNORE_STEP_BREAKPOINT;
-+        if(debug_options & IGNORE_CUSTOM_BREAKPOINT)
-+          debug_options ^= IGNORE_CUSTOM_BREAKPOINT;
-+        if(cm->breakpoints[ip] & NEXT_BREAKPOINT)
-+          cm->breakpoints[ip] ^= NEXT_BREAKPOINT;
-+
-+        set_debug_files();
-+        write_debug_header(state, call_frame);
-+        poll_debug_file(state, call_frame);
-+      }
-+
++          set_debug_files();
++          write_debug_header(state, call_frame);
++          poll_debug_file(state, call_frame);
++        }
+       }
+ 
+-      sassert(chan->has_readers_p());
 +      pthread_mutex_unlock(&mutex_yield_debugger);
 +    }
 +
@@ -250,6 +260,9 @@ index 30556c9..67ab663 100644
 +          strcpy(wfile + len, "rbx_write.txt");
 +          debug_read_file = rfile;
 +          debug_write_file = wfile;
++        }
++        else {
++          debug_options |= NO_DEBUG_DIR;
 +        }
 +      }
 +    }
@@ -350,25 +363,22 @@ index 30556c9..67ab663 100644
 +            break;
 +          }
  
--      state->set_call_frame(call_frame);
+-      chan->send(state, state->thread.get());
+-      control->receive(state, call_frame);
 +          sz_record = atoi(tmp);
 +          if(sz_record <= 0) continue;
- 
--      chan = try_as<Channel>(G(vm)->get_ivar(state,
--            state->symbol("@debug_channel")));
++
 +          if(sz_record > 1024 - 4) {
 +            sleep(sec_sleep);
 +            break;
 +          }
- 
--      if(!chan) return;
++
 +          tmp[sz_record] = '\0';
 +          if(fread(tmp, 1, (size_t)sz_record, rd) < (size_t)sz_record) {
 +            sleep(sec_sleep);
 +            break;
 +          }
- 
--      Channel* control = state->thread->control_channel();
++
 +          if(nth_record >= num_debug_records) {
 +            ++num_debug_records;
 +            if(execute_debug_command(state, call_frame, tmp)) {
@@ -383,10 +393,7 @@ index 30556c9..67ab663 100644
 +        fclose(rd);
 +      }
 +    }
- 
--      if(control->nil_p()) {
--        control = Channel::create(state);
--        state->thread->control_channel(state, control);
++
 +    bool execute_debug_command(STATE, CallFrame* call_frame, const char* cmd) {
 +      int ip = call_frame->ip - 1;
 +      CompiledMethod* cm = call_frame->cm;
@@ -422,7 +429,7 @@ index 30556c9..67ab663 100644
 +      }
 +      else if(strcmp(cmd, "s") == 0) {
 +        debug_options |= IGNORE_CUSTOM_BREAKPOINT;
-       }
++      }
 +      else if(strcmp(cmd, "r") == 0) {
 +        debug_options |= IGNORE_STEP_BREAKPOINT;
 +      }
@@ -449,17 +456,14 @@ index 30556c9..67ab663 100644
 +        }
 +        if(!str.empty())
 +          write_debug_record(str.c_str());
- 
--      sassert(chan->has_readers_p());
++
 +        return false;
 +      }
 +      else {
 +        write_debug_record("[debug] command not recognized\n");
 +        return false;
 +      }
- 
--      chan->send(state, state->thread.get());
--      control->receive(state, call_frame);
++
 +      return true;  // don't read anymore commands
 +    }
 +
