@@ -78,13 +78,13 @@ void receive_debug_commands(const char* wfile) {
     }
 
     fclose(wd);
-    sleep(5);
+    sleep(3);
   }
 }
 
 void poll_debug_file(const char* rfile, const char* wfile) {
   FILE* rd;
-  uint32_t nth_record, sec_sleep = 15;
+  uint32_t nth_record, sec_sleep = 10;
   int sz_record;
   char tmp[8192];
 

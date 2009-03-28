@@ -134,7 +134,7 @@ index 1a81012..63adaec 100644
      attr_accessor(name, Symbol);
      attr_accessor(iseq, InstructionSequence);
 diff --git a/vm/helpers.cpp b/vm/helpers.cpp
-index 30556c9..aafbf13 100644
+index 30556c9..67ab663 100644
 --- a/vm/helpers.cpp
 +++ b/vm/helpers.cpp
 @@ -15,6 +15,7 @@
@@ -321,7 +321,7 @@ index 30556c9..aafbf13 100644
 +
 +    void poll_debug_file(STATE, CallFrame* call_frame) {
 +      FILE* rd;
-+      uint32_t nth_record, sec_sleep = 2;
++      uint32_t nth_record, sec_sleep = 1;
 +      int sz_record;
 +      char tmp[1024];
 +
@@ -507,7 +507,7 @@ index 30556c9..aafbf13 100644
 +    }
 +
 +    // base 10 natural number delimited by string boundary and/or spaces
-+    // returns the pointer to the next token or null byte
++    // returns the pointer to the next token or null byte if found
 +    //
 +    const char* extract_number(const char* cmd, uint32_t* num) {
 +      const char* rght = cmd;

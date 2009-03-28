@@ -4,4 +4,6 @@
 * if you're at the last instruction in a method and you enter the 'next' command, then
   the debugger behaves like the 'step' command was issued instead
 * the zero pid applies the command to all the processes
+* the 'step' command can be fooled by a loop that begins at the first instruction in some situations
+* if the 'next' command is entered at a jump instruction then it always sets two separate breakpoints
 
