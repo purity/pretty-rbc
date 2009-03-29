@@ -134,7 +134,7 @@ index 1a81012..63adaec 100644
      attr_accessor(name, Symbol);
      attr_accessor(iseq, InstructionSequence);
 diff --git a/vm/helpers.cpp b/vm/helpers.cpp
-index 30556c9..fa74cf3 100644
+index 30556c9..78eb880 100644
 --- a/vm/helpers.cpp
 +++ b/vm/helpers.cpp
 @@ -15,6 +15,7 @@
@@ -171,7 +171,7 @@ index 30556c9..fa74cf3 100644
      void add_method(STATE, CallFrame* call_frame, Module* mod, Symbol* name, CompiledMethod* method) {
        method->scope(state, call_frame->cm->scope());
        method->serial(state, Fixnum::from(0));
-@@ -280,27 +300,385 @@ namespace rubinius {
+@@ -280,27 +300,441 @@ namespace rubinius {
        return module;
      }
  
@@ -362,9 +362,7 @@ index 30556c9..fa74cf3 100644
 +            sleep(sec_sleep);
 +            break;
 +          }
- 
--      chan->send(state, state->thread.get());
--      control->receive(state, call_frame);
++
 +          sz_record = atoi(tmp);
 +          if(sz_record <= 0) continue;
 +
@@ -386,7 +384,9 @@ index 30556c9..fa74cf3 100644
 +              return;
 +            }
 +          }
-+
+ 
+-      chan->send(state, state->thread.get());
+-      control->receive(state, call_frame);
 +          ++nth_record;
 +        }
 +
@@ -445,6 +445,19 @@ index 30556c9..fa74cf3 100644
 +          return false;
 +        }
 +      }
++      else if(strcmp(cmd, "bpr") == 0) {
++        CallFrame* frm = call_frame->previous;
++
++        if(frm && frm->cm && frm->cm->breakpoints &&
++              (uint32_t)frm->ip < frm->cm->iseq()->opcodes()->num_fields()) {
++          frm->cm->breakpoints[frm->ip] ^= CUSTOM_BREAKPOINT;
++          if(frm->cm->breakpoints[frm->ip] & CUSTOM_BREAKPOINT)
++            write_debug_record("[debug] breakpoint set\n");
++          else
++            write_debug_record("[debug] breakpoint unset\n");
++        }
++        return false;
++      }
 +      else if(strcmp(cmd, "stk") == 0) {
 +        std::string str;
 +        int sp = call_frame->calculate_sp();
@@ -457,6 +470,49 @@ index 30556c9..fa74cf3 100644
 +        if(!str.empty())
 +          write_debug_record(str.c_str());
 +
++        return false;
++      }
++      else if(strcmp(cmd, "l") == 0) {
++        VariableScope* scp = call_frame->scope;
++        int num_locals = scp->number_of_locals();
++        int i;
++        char tmp[256];
++        std::string str;
++
++        for(i = 0; i < num_locals; i++) {
++          snprintf(tmp, 256 - 4, "%d: %p\n", i, scp->get_local(i));
++          str += tmp;
++        }
++        if(!str.empty())
++          write_debug_record(str.c_str());
++
++        return false;
++      }
++      else if(strcmp(cmd, "f") == 0) {
++        uint32_t frame_count = 0;
++        CallFrame* frm = call_frame;
++        char tmp[256];
++        std::string str;
++
++        while(frm) {
++          ++frame_count;
++          frm = frm->previous;
++        }
++
++        snprintf(tmp, 256 - 4, "frames: %u\n", frame_count);
++        str += tmp;
++        snprintf(tmp, 256 - 4, "args: %d\n", call_frame->args);
++        str += tmp;
++        snprintf(tmp, 256 - 4, "stack size: %d\n", call_frame->stack_size);
++        str += tmp;
++        snprintf(tmp, 256 - 4, "locals: %d\n", call_frame->scope->number_of_locals());
++        str += tmp;
++        snprintf(tmp, 256 - 4, "unwind: %d\n", call_frame->current_unwind);
++        str += tmp;
++        snprintf(tmp, 256 - 4, "opcodes: %u\n", num_ops);
++        str += tmp;
++
++        write_debug_record(str.c_str());
 +        return false;
 +      }
 +      else {
