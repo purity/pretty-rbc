@@ -134,7 +134,7 @@ index 1a81012..63adaec 100644
      attr_accessor(name, Symbol);
      attr_accessor(iseq, InstructionSequence);
 diff --git a/vm/helpers.cpp b/vm/helpers.cpp
-index 30556c9..78eb880 100644
+index 30556c9..d1cca9c 100644
 --- a/vm/helpers.cpp
 +++ b/vm/helpers.cpp
 @@ -15,6 +15,7 @@
@@ -171,7 +171,7 @@ index 30556c9..78eb880 100644
      void add_method(STATE, CallFrame* call_frame, Module* mod, Symbol* name, CompiledMethod* method) {
        method->scope(state, call_frame->cm->scope());
        method->serial(state, Fixnum::from(0));
-@@ -280,27 +300,441 @@ namespace rubinius {
+@@ -280,27 +300,469 @@ namespace rubinius {
        return module;
      }
  
@@ -184,6 +184,7 @@ index 30556c9..78eb880 100644
 +    const char* extract_number(const char* cmd, uint32_t* num);
 +    void rtrim(char* str);
 +    bool numeric_string(char* str);
++    opcode get_opcode(STATE, Tuple* tup, uint32_t idx);
 +
      void yield_debugger(STATE, CallFrame* call_frame) {
 -      Channel* chan;
@@ -193,27 +194,19 @@ index 30556c9..78eb880 100644
 +
 +      // must not call any code that acquires the global_lock
 +      // in the following section so there's no opportunity for deadlock
- 
--      state->set_call_frame(call_frame);
++
 +      pthread_mutex_lock(&mutex_yield_debugger);
- 
--      chan = try_as<Channel>(G(vm)->get_ivar(state,
--            state->symbol("@debug_channel")));
++
 +      if(!(debug_options & NO_DEBUG_DIR)) {
- 
--      if(!chan) return;
++
 +        ++instruction_count;
- 
--      Channel* control = state->thread->control_channel();
++
 +        if(!cm->breakpoints) {
 +          cm->breakpoints = new uint8_t[num_ops];   // optimize this to 3 bits
 +          memset(cm->breakpoints, 0, num_ops);      // per opcode
 +          cm->breakpoints[0] = STEP_BREAKPOINT;     /* never unset this */
 +        }
- 
--      if(control->nil_p()) {
--        control = Channel::create(state);
--        state->thread->control_channel(state, control);
++
 +        if(instruction_count == bp_instruction_count ||
 +              (cm->breakpoints[ip] != 0 &&
 +              ((cm->breakpoints[ip] & NEXT_BREAKPOINT) ||
@@ -230,9 +223,8 @@ index 30556c9..78eb880 100644
 +          write_debug_header(state, call_frame);
 +          poll_debug_file(state, call_frame);
 +        }
-       }
- 
--      sassert(chan->has_readers_p());
++      }
++
 +      pthread_mutex_unlock(&mutex_yield_debugger);
 +    }
 +
@@ -275,7 +267,7 @@ index 30556c9..78eb880 100644
 +      if(!debug_write_file) return;
 +      if((wd = fopen(debug_write_file, "a")) == NULL) return;
 +
-+      snprintf(ssz, 32 - 4, "%u\n", strlen(out));
++      snprintf(ssz, sizeof(ssz), "%u\n", strlen(out));
 +      str += ssz;
 +      str += out;
 +
@@ -289,11 +281,9 @@ index 30556c9..78eb880 100644
 +      int ip = call_frame->ip - 1;
 +      std::string str;
 +      char tmp[2048];
-+      Tuple* ops = cm->iseq()->opcodes();
-+      opcode op = ops->at(state, ip + 1)->nil_p() ? 0 :
-+          static_cast<Fixnum*>(ops->at(state, ip + 1))->to_native();
++      opcode op = get_opcode(state, cm->iseq()->opcodes(), ip + 1);
 +
-+      snprintf(tmp, 2048 - 4, "[debug] process id: %p, thread id: %p,\n"
++      snprintf(tmp, sizeof(tmp), "[debug] process id: %p, thread id: %p,\n"
 +                              "        self pointer: %p, method pointer: %p,\n"
 +                              "        sp: %d, ip: %d, instruction: '%s'\n",
 +          (void*)getpid(), (void*)pthread_self(), self, cm,
@@ -305,7 +295,7 @@ index 30556c9..78eb880 100644
 +
 +        if(static_cast<Module*>(self)->name() &&
 +            !static_cast<Module*>(self)->name()->nil_p()) {
-+          snprintf(tmp, 2048 - 4, "        self class name: '%s'\n",
++          snprintf(tmp, sizeof(tmp), "        self class name: '%s'\n",
 +              static_cast<Module*>(self)->name()->c_str(state));
 +          str += tmp;
 +        }
@@ -313,19 +303,19 @@ index 30556c9..78eb880 100644
 +      else {
 +        if(self->class_object(state)->name() &&
 +            !self->class_object(state)->name()->nil_p()) {
-+          snprintf(tmp, 2048 - 4, "        self class name: '%s'\n",
++          snprintf(tmp, sizeof(tmp), "        self class name: '%s'\n",
 +              self->class_object(state)->name()->c_str(state));
 +          str += tmp;
 +        }
 +      }
 +
 +      if(cm->name() && !cm->name()->nil_p()) {
-+        snprintf(tmp, 2048 - 4, "        method name: '%s'\n", cm->name()->c_str(state));
++        snprintf(tmp, sizeof(tmp), "        method name: '%s'\n", cm->name()->c_str(state));
 +        str += tmp;
 +      }
 +
 +      if(!cm->backend_method_) {
-+        snprintf(tmp, 2048 - 4, "        backend_method_ is NULL\n");
++        snprintf(tmp, sizeof(tmp), "        backend_method_ is NULL\n");
 +        str += tmp;
 +      }
 +
@@ -351,32 +341,40 @@ index 30556c9..78eb880 100644
 +
 +        while(1) {
 +
-+          if(fgets(tmp, 1024 - 4, rd) == NULL) {
++          if(fgets(tmp, sizeof(tmp), rd) == NULL) {
 +            sleep(sec_sleep);
 +            break;
 +          }
 +
 +          rtrim(tmp);
-+
+ 
+-      state->set_call_frame(call_frame);
 +          if(!numeric_string(tmp)) {
 +            sleep(sec_sleep);
 +            break;
 +          }
-+
+ 
+-      chan = try_as<Channel>(G(vm)->get_ivar(state,
+-            state->symbol("@debug_channel")));
 +          sz_record = atoi(tmp);
 +          if(sz_record <= 0) continue;
-+
-+          if(sz_record > 1024 - 4) {
+ 
+-      if(!chan) return;
++          if(sz_record > (int)sizeof(tmp)) {
 +            sleep(sec_sleep);
 +            break;
 +          }
-+
+ 
+-      Channel* control = state->thread->control_channel();
 +          tmp[sz_record] = '\0';
 +          if(fread(tmp, 1, (size_t)sz_record, rd) < (size_t)sz_record) {
 +            sleep(sec_sleep);
 +            break;
 +          }
-+
+ 
+-      if(control->nil_p()) {
+-        control = Channel::create(state);
+-        state->thread->control_channel(state, control);
 +          if(nth_record >= num_debug_records) {
 +            ++num_debug_records;
 +            if(execute_debug_command(state, call_frame, tmp)) {
@@ -384,9 +382,7 @@ index 30556c9..78eb880 100644
 +              return;
 +            }
 +          }
- 
--      chan->send(state, state->thread.get());
--      control->receive(state, call_frame);
++
 +          ++nth_record;
 +        }
 +
@@ -398,8 +394,7 @@ index 30556c9..78eb880 100644
 +      int ip = call_frame->ip - 1;
 +      CompiledMethod* cm = call_frame->cm;
 +      Tuple* ops = cm->iseq()->opcodes();
-+      opcode op = ops->at(state, ip + 1)->nil_p() ? 0 :
-+          static_cast<Fixnum*>(ops->at(state, ip + 1))->to_native();
++      opcode op = get_opcode(state, ops, ip + 1);
 +      uint32_t num_ops = ops->num_fields();
 +      size_t ins_size = InstructionSequence::instruction_width(op);
 +      uintptr_t pid;
@@ -444,6 +439,31 @@ index 30556c9..78eb880 100644
 +          write_debug_record("[debug] offset not given for bpc command\n");
 +          return false;
 +        }
+       }
++      else if(strncmp(cmd, "bpi", 3) == 0) {
++        uint32_t bpip, ydip = 0, k, nth_ins = 0;
++        opcode oc;
++
++        if(extract_number(cmd, &bpip)) {
++          for(k = 0; k < num_ops; nth_ins++) {
++            if(bpip <= k) {
++              if(bpip == k && nth_ins % 2 == 0) ydip = k;
++              break;
++            }
++            if(nth_ins % 2 == 0) ydip = k;
++            oc = get_opcode(state, ops, k);
++            k += InstructionSequence::instruction_width(oc);
++          }
++          cm->breakpoints[ydip] ^= CUSTOM_BREAKPOINT;
++          if(cm->breakpoints[ydip] & CUSTOM_BREAKPOINT)
++            write_debug_record("[debug] breakpoint set\n");
++          else
++            write_debug_record("[debug] breakpoint unset\n");
++        }
++        else {
++          write_debug_record("[debug] ip not given for bpi command\n");
++        }
++        return false;
 +      }
 +      else if(strcmp(cmd, "bpr") == 0) {
 +        CallFrame* frm = call_frame->previous;
@@ -459,17 +479,18 @@ index 30556c9..78eb880 100644
 +        return false;
 +      }
 +      else if(strcmp(cmd, "stk") == 0) {
-+        std::string str;
++        std::string str = "[debug] stack\n";
 +        int sp = call_frame->calculate_sp();
 +        char tmp[256];
 +
 +        for(; sp >= 0; sp--) {
-+          snprintf(tmp, 256 - 4, "%d: %p\n", sp, call_frame->stack_at((size_t)sp));
++          snprintf(tmp, sizeof(tmp), "%d: %p\n", sp, call_frame->stack_at((size_t)sp));
 +          str += tmp;
 +        }
-+        if(!str.empty())
++        if(str.size() > 14)
 +          write_debug_record(str.c_str());
-+
+ 
+-      sassert(chan->has_readers_p());
 +        return false;
 +      }
 +      else if(strcmp(cmd, "l") == 0) {
@@ -477,13 +498,13 @@ index 30556c9..78eb880 100644
 +        int num_locals = scp->number_of_locals();
 +        int i;
 +        char tmp[256];
-+        std::string str;
++        std::string str = "[debug] locals\n";
 +
 +        for(i = 0; i < num_locals; i++) {
-+          snprintf(tmp, 256 - 4, "%d: %p\n", i, scp->get_local(i));
++          snprintf(tmp, sizeof(tmp), "%d: %p\n", i, scp->get_local(i));
 +          str += tmp;
 +        }
-+        if(!str.empty())
++        if(str.size() > 15)
 +          write_debug_record(str.c_str());
 +
 +        return false;
@@ -492,24 +513,24 @@ index 30556c9..78eb880 100644
 +        uint32_t frame_count = 0;
 +        CallFrame* frm = call_frame;
 +        char tmp[256];
-+        std::string str;
++        std::string str = "[debug] call frame\n";
 +
 +        while(frm) {
 +          ++frame_count;
 +          frm = frm->previous;
 +        }
 +
-+        snprintf(tmp, 256 - 4, "frames: %u\n", frame_count);
++        snprintf(tmp, sizeof(tmp), "frames: %u\n", frame_count);
 +        str += tmp;
-+        snprintf(tmp, 256 - 4, "args: %d\n", call_frame->args);
++        snprintf(tmp, sizeof(tmp), "args: %d\n", call_frame->args);
 +        str += tmp;
-+        snprintf(tmp, 256 - 4, "stack size: %d\n", call_frame->stack_size);
++        snprintf(tmp, sizeof(tmp), "stack size: %d\n", call_frame->stack_size);
 +        str += tmp;
-+        snprintf(tmp, 256 - 4, "locals: %d\n", call_frame->scope->number_of_locals());
++        snprintf(tmp, sizeof(tmp), "locals: %d\n", call_frame->scope->number_of_locals());
 +        str += tmp;
-+        snprintf(tmp, 256 - 4, "unwind: %d\n", call_frame->current_unwind);
++        snprintf(tmp, sizeof(tmp), "unwind: %d\n", call_frame->current_unwind);
 +        str += tmp;
-+        snprintf(tmp, 256 - 4, "opcodes: %u\n", num_ops);
++        snprintf(tmp, sizeof(tmp), "opcodes: %u\n", num_ops);
 +        str += tmp;
 +
 +        write_debug_record(str.c_str());
@@ -622,6 +643,13 @@ index 30556c9..78eb880 100644
 +        ++str;
 +      }
 +      return true;
++    }
+ 
+-      chan->send(state, state->thread.get());
+-      control->receive(state, call_frame);
++    opcode get_opcode(STATE, Tuple* tup, uint32_t idx) {
++      return tup->at(state, idx)->nil_p() ? 0 :
++          static_cast<Fixnum*>(tup->at(state, idx))->to_native();
      }
    }
  }

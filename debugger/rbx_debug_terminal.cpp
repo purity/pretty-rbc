@@ -55,7 +55,7 @@ void receive_debug_commands(const char* wfile) {
   size_t len_out;
 
   printf("[rdt] waiting for user input...\n");
-  fgets(out, 512 - 4, stdin);
+  fgets(out, sizeof(out), stdin);
 
   rtrim(out);
   len_out = strlen(out);
@@ -67,7 +67,7 @@ void receive_debug_commands(const char* wfile) {
       return;
     }
 
-    snprintf(ssz, 32 - 4, "%u\n", len_out);
+    snprintf(ssz, sizeof(ssz), "%u\n", len_out);
     str += ssz;
     str += out;
 
@@ -100,7 +100,7 @@ void poll_debug_file(const char* rfile, const char* wfile) {
 
     while(1) {
 
-      if(fgets(tmp, 8192 - 4, rd) == NULL) {
+      if(fgets(tmp, sizeof(tmp), rd) == NULL) {
         receive_debug_commands(wfile);
         break;
       }
@@ -116,7 +116,7 @@ void poll_debug_file(const char* rfile, const char* wfile) {
       sz_record = atoi(tmp);
       if(sz_record <= 0) continue;
 
-      if(sz_record > 8192 - 4) {
+      if(sz_record > (int)sizeof(tmp)) {
         printf("[rdt] sz_record is too high. nth_record: '%u'\n", nth_record);
         sleep(sec_sleep);
         break;
