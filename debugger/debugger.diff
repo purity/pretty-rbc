@@ -96,10 +96,10 @@ index 9e79d43..bf5b1b6 100644
        if @last.size == 1
          @stream << @last.first
 diff --git a/vm/builtin/compiledmethod.cpp b/vm/builtin/compiledmethod.cpp
-index a262e36..453bbf2 100644
+index 0009293..98c58a2 100644
 --- a/vm/builtin/compiledmethod.cpp
 +++ b/vm/builtin/compiledmethod.cpp
-@@ -33,6 +33,7 @@ namespace rubinius {
+@@ -35,6 +35,7 @@ namespace rubinius {
      cm->local_count(state, Fixnum::from(0));
      cm->set_executor(CompiledMethod::default_executor);
      cm->backend_method_ = NULL;
@@ -108,7 +108,7 @@ index a262e36..453bbf2 100644
      return cm;
    }
 diff --git a/vm/builtin/compiledmethod.hpp b/vm/builtin/compiledmethod.hpp
-index 1a81012..63adaec 100644
+index 4c9df31..bb41f52 100644
 --- a/vm/builtin/compiledmethod.hpp
 +++ b/vm/builtin/compiledmethod.hpp
 @@ -37,7 +37,7 @@ namespace rubinius {
@@ -121,7 +121,7 @@ index 1a81012..63adaec 100644
      attr_accessor(name, Symbol);
      attr_accessor(iseq, InstructionSequence);
 diff --git a/vm/helpers.cpp b/vm/helpers.cpp
-index 30556c9..d1cca9c 100644
+index 81728de..c16300e 100644
 --- a/vm/helpers.cpp
 +++ b/vm/helpers.cpp
 @@ -15,6 +15,7 @@
@@ -132,7 +132,7 @@ index 30556c9..d1cca9c 100644
  
  #include "vm.hpp"
  #include "object_utils.hpp"
-@@ -22,6 +23,25 @@
+@@ -24,6 +25,25 @@
  
  namespace rubinius {
    namespace Helpers {
@@ -158,7 +158,7 @@ index 30556c9..d1cca9c 100644
      void add_method(STATE, CallFrame* call_frame, Module* mod, Symbol* name, CompiledMethod* method) {
        method->scope(state, call_frame->cm->scope());
        method->serial(state, Fixnum::from(0));
-@@ -280,27 +300,469 @@ namespace rubinius {
+@@ -270,27 +290,469 @@ namespace rubinius {
        return module;
      }
  
@@ -347,7 +347,7 @@ index 30556c9..d1cca9c 100644
 +          if(sz_record <= 0) continue;
  
 -      if(!chan) return;
-+          if(sz_record > (int)sizeof(tmp)) {
++          if(sz_record >= (int)sizeof(tmp)) {
 +            sleep(sec_sleep);
 +            break;
 +          }

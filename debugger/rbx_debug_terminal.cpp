@@ -116,7 +116,7 @@ void poll_debug_file(const char* rfile, const char* wfile) {
       sz_record = atoi(tmp);
       if(sz_record <= 0) continue;
 
-      if(sz_record > (int)sizeof(tmp)) {
+      if(sz_record >= (int)sizeof(tmp)) {
         printf("[rdt] sz_record is too high. nth_record: '%u'\n", nth_record);
         sleep(sec_sleep);
         break;
