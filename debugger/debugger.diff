@@ -121,7 +121,7 @@ index 4c9df31..bb41f52 100644
      attr_accessor(name, Symbol);
      attr_accessor(iseq, InstructionSequence);
 diff --git a/vm/helpers.cpp b/vm/helpers.cpp
-index 81728de..c16300e 100644
+index 81728de..c85baab 100644
 --- a/vm/helpers.cpp
 +++ b/vm/helpers.cpp
 @@ -15,6 +15,7 @@
@@ -158,7 +158,7 @@ index 81728de..c16300e 100644
      void add_method(STATE, CallFrame* call_frame, Module* mod, Symbol* name, CompiledMethod* method) {
        method->scope(state, call_frame->cm->scope());
        method->serial(state, Fixnum::from(0));
-@@ -270,27 +290,469 @@ namespace rubinius {
+@@ -270,27 +290,498 @@ namespace rubinius {
        return module;
      }
  
@@ -172,6 +172,7 @@ index 81728de..c16300e 100644
 +    void rtrim(char* str);
 +    bool numeric_string(char* str);
 +    opcode get_opcode(STATE, Tuple* tup, uint32_t idx);
++    const char* pointer_role(Object* obj);
 +
      void yield_debugger(STATE, CallFrame* call_frame) {
 -      Channel* chan;
@@ -202,9 +203,15 @@ index 81728de..c16300e 100644
 +              ((cm->breakpoints[ip] & CUSTOM_BREAKPOINT) &&
 +              !(debug_options & IGNORE_CUSTOM_BREAKPOINT))))) {
 +
++          if(cm->breakpoints[ip] & NEXT_BREAKPOINT) {
++            uint32_t k;
++            for(k = 0; k < num_ops; k++) {
++              cm->breakpoints[k] &= ~NEXT_BREAKPOINT;
++            }
++          }
++
 +          debug_options &= ~IGNORE_STEP_BREAKPOINT;
 +          debug_options &= ~IGNORE_CUSTOM_BREAKPOINT;
-+          cm->breakpoints[ip] &= ~NEXT_BREAKPOINT;
 +
 +          set_debug_files();
 +          write_debug_header(state, call_frame);
@@ -334,34 +341,31 @@ index 81728de..c16300e 100644
 +          }
 +
 +          rtrim(tmp);
- 
--      state->set_call_frame(call_frame);
++
 +          if(!numeric_string(tmp)) {
 +            sleep(sec_sleep);
 +            break;
 +          }
  
--      chan = try_as<Channel>(G(vm)->get_ivar(state,
--            state->symbol("@debug_channel")));
+-      state->set_call_frame(call_frame);
 +          sz_record = atoi(tmp);
 +          if(sz_record <= 0) continue;
  
--      if(!chan) return;
+-      chan = try_as<Channel>(G(vm)->get_ivar(state,
+-            state->symbol("@debug_channel")));
 +          if(sz_record >= (int)sizeof(tmp)) {
 +            sleep(sec_sleep);
 +            break;
 +          }
  
--      Channel* control = state->thread->control_channel();
+-      if(!chan) return;
 +          tmp[sz_record] = '\0';
 +          if(fread(tmp, 1, (size_t)sz_record, rd) < (size_t)sz_record) {
 +            sleep(sec_sleep);
 +            break;
 +          }
  
--      if(control->nil_p()) {
--        control = Channel::create(state);
--        state->thread->control_channel(state, control);
+-      Channel* control = state->thread->control_channel();
 +          if(nth_record >= num_debug_records) {
 +            ++num_debug_records;
 +            if(execute_debug_command(state, call_frame, tmp)) {
@@ -369,7 +373,10 @@ index 81728de..c16300e 100644
 +              return;
 +            }
 +          }
-+
+ 
+-      if(control->nil_p()) {
+-        control = Channel::create(state);
+-        state->thread->control_channel(state, control);
 +          ++nth_record;
 +        }
 +
@@ -426,7 +433,7 @@ index 81728de..c16300e 100644
 +          write_debug_record("[debug] offset not given for bpc command\n");
 +          return false;
 +        }
-       }
++      }
 +      else if(strncmp(cmd, "bpi", 3) == 0) {
 +        uint32_t bpip, ydip = 0, k, nth_ins = 0;
 +        opcode oc;
@@ -471,13 +478,14 @@ index 81728de..c16300e 100644
 +        char tmp[256];
 +
 +        for(; sp >= 0; sp--) {
-+          snprintf(tmp, sizeof(tmp), "%d: %p\n", sp, call_frame->stack_at((size_t)sp));
++          snprintf(tmp, sizeof(tmp), "%d: %p (%s)\n",
++              sp, call_frame->stack_at((size_t)sp),
++              pointer_role(call_frame->stack_at((size_t)sp)));
 +          str += tmp;
 +        }
 +        if(str.size() > 14)
 +          write_debug_record(str.c_str());
- 
--      sassert(chan->has_readers_p());
++
 +        return false;
 +      }
 +      else if(strcmp(cmd, "l") == 0) {
@@ -488,7 +496,8 @@ index 81728de..c16300e 100644
 +        std::string str = "[debug] locals\n";
 +
 +        for(i = 0; i < num_locals; i++) {
-+          snprintf(tmp, sizeof(tmp), "%d: %p\n", i, scp->get_local(i));
++          snprintf(tmp, sizeof(tmp), "%d: %p (%s)\n", i, scp->get_local(i),
++              pointer_role(scp->get_local(i)));
 +          str += tmp;
 +        }
 +        if(str.size() > 15)
@@ -522,7 +531,7 @@ index 81728de..c16300e 100644
 +
 +        write_debug_record(str.c_str());
 +        return false;
-+      }
+       }
 +      else {
 +        write_debug_record("[debug] command not recognized\n");
 +        return false;
@@ -602,7 +611,8 @@ index 81728de..c16300e 100644
 +            digits = 0;
 +          }
 +        }
-+
+ 
+-      sassert(chan->has_readers_p());
 +        ++rght;
 +      }
 +
@@ -631,12 +641,31 @@ index 81728de..c16300e 100644
 +      }
 +      return true;
 +    }
- 
--      chan->send(state, state->thread.get());
--      control->receive(state, call_frame);
++
 +    opcode get_opcode(STATE, Tuple* tup, uint32_t idx) {
 +      return tup->at(state, idx)->nil_p() ? 0 :
 +          static_cast<Fixnum*>(tup->at(state, idx))->to_native();
++    }
+ 
+-      chan->send(state, state->thread.get());
+-      control->receive(state, call_frame);
++    const char* pointer_role(Object* obj) {
++      if(FIXNUM_P(obj))
++        return "fixnum";
++      else if(REFERENCE_P(obj))
++        return "reference";
++      else if(SYMBOL_P(obj))
++        return "symbol";
++      else if(obj == Qfalse)
++        return "false";
++      else if(obj == Qnil)
++        return "nil";
++      else if(obj == Qtrue)
++        return "true";
++      else if(obj == Qundef)
++        return "undef";
++      else
++        return "unknown";
      }
    }
  }
