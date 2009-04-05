@@ -16,7 +16,7 @@ namespace rubinius {
     , instruction_count(0)
     , bp_instruction_count(0)
   {
-    pthread_mutex_init(&mutex_member_variables, NULL);
+    pthread_mutex_init(&mutex, NULL);
   }
 
   void Debugger::run(STATE, CallFrame* call_frame) {
@@ -27,7 +27,7 @@ namespace rubinius {
     // must not call any code that acquires the global_lock
     // in the following section so there's no opportunity for deadlock
 
-    pthread_mutex_lock(&mutex_member_variables);
+    pthread_mutex_lock(&mutex);
 
     if(!(options & NO_DEBUG_DIR)) {
 
@@ -59,7 +59,7 @@ namespace rubinius {
       }
     }
 
-    pthread_mutex_unlock(&mutex_member_variables);
+    pthread_mutex_unlock(&mutex);
   }
 
   void Debugger::set_files() {

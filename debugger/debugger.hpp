@@ -12,7 +12,7 @@ namespace rubinius {
 
   class Debugger {
   private:
-    pthread_mutex_t mutex_member_variables;
+    pthread_mutex_t mutex;
     uint32_t num_records;
     uint32_t options;
     const char* read_file;
