@@ -1,105 +1,45 @@
-diff --git a/kernel/compiler/compile.rb b/kernel/compiler/compile.rb
-index eb5d181..3fdb352 100644
---- a/kernel/compiler/compile.rb
-+++ b/kernel/compiler/compile.rb
-@@ -33,11 +33,13 @@ class Compiler
-   end
- 
-   def self.compile_file(path, flags=nil)
--    compiler.compile_file(path, flags)
-+    cm = compiler.compile_file(path, flags)
-+    VerifyYieldDebugger.run(cm)
-   end
- 
-   def self.compile_string(string, context=nil, filename="(eval)", line=1)
--    compiler.compile_string(string, context, filename, line)
-+    cm = compiler.compile_string(string, context, filename, line)
-+    VerifyYieldDebugger.run(cm)
-   end
- 
-   def self.execute(string)
-diff --git a/kernel/compiler/compiled_file.rb b/kernel/compiler/compiled_file.rb
-index 43ce2a4..c2cbdf0 100644
---- a/kernel/compiler/compiled_file.rb
-+++ b/kernel/compiler/compiled_file.rb
-@@ -1,3 +1,39 @@
-+
-+class VerifyYieldDebugger
-+
-+  def self.all_methods(obj)
-+    case obj
-+    when CompiledMethod
-+      cmethods = [obj]
-+      obj.literals.each do |o|
-+        cmethods += all_methods(o)
-+      end
-+      cmethods
-+    else
-+      []
-+    end
-+  end
-+
-+  def self.check(cm)
-+    iseq = cm.iseq.decode
-+
-+    iseq.each_with_index do |obj, idx|
-+      if idx % 2 == 0 and obj != [:yield_debugger]
-+        raise "iseq doesn't have enough yield_debugger instructions #{iseq.inspect}"
-+      end
-+    end
-+  end
-+
-+  def self.run(cm_main)
-+
-+    for cm in all_methods(cm_main)
-+      check(cm)
-+    end
-+
-+    cm_main
-+  end
-+end
-+
- module Rubinius
-   ##
-   # A decode for the .rbc file format.
-@@ -34,6 +70,7 @@ module Rubinius
-     ##
-     # Writes the CompiledFile +cm+ to +file+.
-     def self.dump(cm, file)
-+      VerifyYieldDebugger.run(cm)
-       File.open(file, "w") do |f|
-         new("!RBIX", 0, "x").encode_to(f, cm)
-       end
 diff --git a/kernel/compiler/generator.rb b/kernel/compiler/generator.rb
-index 9e79d43..bf5b1b6 100644
+index 9e79d43..55c8ae7 100644
 --- a/kernel/compiler/generator.rb
 +++ b/kernel/compiler/generator.rb
-@@ -220,6 +220,9 @@ class Compiler
+@@ -45,6 +45,7 @@ class Compiler
+       @last = nil
+ 
+       @exceptions = []
++      @debug = ENV["RBX_DEBUG_DIR"] ? true : false
+     end
+ 
+     attr_reader :cache_size, :literals
+@@ -220,6 +221,11 @@ class Compiler
  
        return unless what
  
-+      @ip += 1
-+      @stream << :yield_debugger
++      if @debug
++        @ip += 1
++        @stream << :yield_debugger
++      end
 +
        @ip += what.size
        if what.size == 1
          @stream << what.first
-@@ -230,6 +233,10 @@ class Compiler
+@@ -230,6 +236,12 @@ class Compiler
  
      def flush
        return unless @last
 +
-+      @ip += 1
-+      @stream << :yield_debugger
++      if @debug
++        @ip += 1
++        @stream << :yield_debugger
++      end
 +
        @ip += @last.size
        if @last.size == 1
          @stream << @last.first
 diff --git a/vm/builtin/compiledmethod.cpp b/vm/builtin/compiledmethod.cpp
-index 0009293..98c58a2 100644
+index db0fb31..c4f9b5f 100644
 --- a/vm/builtin/compiledmethod.cpp
 +++ b/vm/builtin/compiledmethod.cpp
-@@ -35,6 +35,7 @@ namespace rubinius {
+@@ -37,6 +37,7 @@ namespace rubinius {
      cm->local_count(state, Fixnum::from(0));
      cm->set_executor(CompiledMethod::default_executor);
      cm->backend_method_ = NULL;
