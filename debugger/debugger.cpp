@@ -473,6 +473,8 @@ namespace rubinius {
     return true;
   }
 
+  // only use with instruction opcode, not the arg opcodes
+  //
   opcode Debugger::get_opcode(STATE, Tuple* tup, uint32_t idx) {
     return tup->at(state, idx)->nil_p() ? 0 :
         static_cast<Fixnum*>(tup->at(state, idx))->to_native();

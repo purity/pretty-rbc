@@ -11,3 +11,11 @@
 * the zero pid applies the command to all the processes
 * the 'step' command can be fooled by a loop that begins at the first instruction in some situations
 
+[research]
+
+* a process (P1) has two threads (T1 and T2) that share heap memory (M1) of type pthread_mutex_t.
+  T1 acquires the mutex lock at M1, and T2 forks a process (P2) while T1 has the lock at M1.
+  M1 is copied to P2 as M2. does P2 hang indefinitely when trying to acquire the mutex lock at M2?
+  or is there enough information at M2 or elsewhere so that P2 recognizes the lock at M2 is not
+  its own?
+
