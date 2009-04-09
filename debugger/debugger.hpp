@@ -45,6 +45,7 @@ namespace rubinius {
     opcode get_opcode(STATE, Tuple* tup, uint32_t idx);
     const char* pointer_role(Object* obj);
     void allocate_breakpoints(CompiledMethod* cm);
+    CompiledMethod* get_method(STATE, const char* cmd);
 
   public:
     Debugger();

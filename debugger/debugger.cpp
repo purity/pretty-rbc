@@ -304,6 +304,21 @@ namespace rubinius {
       }
       return false;
     }
+    else if(strncmp(cmd, "bpm", 3) == 0) {
+      CompiledMethod* meth = get_method(state, cmd + 3);
+      if(meth) {
+        allocate_breakpoints(meth);
+        meth->breakpoints[0] ^= CUSTOM_BREAKPOINT;
+        if(meth->breakpoints[0] & CUSTOM_BREAKPOINT)
+          write_record("[debug] breakpoint set\n");
+        else
+          write_record("[debug] breakpoint unset\n");
+      }
+      else {
+        write_record("[debug] method not found\n");
+      }
+      return false;
+    }
     else if(strcmp(cmd, "stk") == 0) {
       std::string str = "[debug] stack\n";
       int sp = call_frame->calculate_sp();
@@ -506,6 +521,10 @@ namespace rubinius {
       memset(cm->breakpoints, 0, num_ops);      // per opcode
       cm->breakpoints[0] = STEP_BREAKPOINT;     /* never unset this */
     }
+  }
+
+  CompiledMethod* Debugger::get_method(STATE, const char* cmd) {
+    return NULL;
   }
 }
 

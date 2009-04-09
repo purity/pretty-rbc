@@ -36,7 +36,7 @@ index 9e79d43..55c8ae7 100644
        if @last.size == 1
          @stream << @last.first
 diff --git a/vm/builtin/compiledmethod.cpp b/vm/builtin/compiledmethod.cpp
-index db0fb31..c4f9b5f 100644
+index 3d0bd70..40f122a 100644
 --- a/vm/builtin/compiledmethod.cpp
 +++ b/vm/builtin/compiledmethod.cpp
 @@ -37,6 +37,7 @@ namespace rubinius {
@@ -61,7 +61,7 @@ index 4c9df31..bb41f52 100644
      attr_accessor(name, Symbol);
      attr_accessor(iseq, InstructionSequence);
 diff --git a/vm/helpers.cpp b/vm/helpers.cpp
-index 81728de..ff8eb89 100644
+index caf7ac7..0e5e8a0 100644
 --- a/vm/helpers.cpp
 +++ b/vm/helpers.cpp
 @@ -21,6 +21,7 @@
@@ -101,18 +101,18 @@ index 81728de..ff8eb89 100644
    }
  }
 diff --git a/vm/vm.hpp b/vm/vm.hpp
-index 92fb5dc..9a9b485 100644
+index 456287a..2a3d772 100644
 --- a/vm/vm.hpp
 +++ b/vm/vm.hpp
-@@ -94,6 +94,7 @@ namespace rubinius {
-   class VMManager;
+@@ -100,6 +100,7 @@ namespace rubinius {
    class Waiter;
    class SignalThread;
+   class LookupTable;
 +  class Debugger;
  
    /* Indirect object handles for references to Ruby objects in
     * native code extensions.
-@@ -120,6 +121,7 @@ namespace rubinius {
+@@ -128,6 +129,7 @@ namespace rubinius {
      Interrupts interrupts;
      SymbolTable symbols;
      ConfigParser *user_config;
@@ -120,7 +120,7 @@ index 92fb5dc..9a9b485 100644
  
    public:
      SharedState(VMManager& manager, int id)
-@@ -129,6 +131,7 @@ namespace rubinius {
+@@ -139,6 +141,7 @@ namespace rubinius {
        , om(0)
        , global_cache(0)
        , user_config(0)
