@@ -46,6 +46,8 @@ namespace rubinius {
     const char* pointer_role(Object* obj);
     void allocate_breakpoints(CompiledMethod* cm);
     CompiledMethod* get_method(STATE, const char* cmd);
+    CompiledMethod* get_method(STATE, Class* cls, const char* method_name);
+    const char* class_path(STATE, const char* cmd, Class** kls);
 
   public:
     Debugger();

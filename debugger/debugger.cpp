@@ -3,6 +3,7 @@
 #include "builtin/class.hpp"
 #include "builtin/symbol.hpp"
 #include "builtin/fixnum.hpp"
+#include "builtin/lookuptable.hpp"
 
 #include "debugger.hpp"
 
@@ -306,7 +307,7 @@ namespace rubinius {
     }
     else if(strncmp(cmd, "bpm", 3) == 0) {
       CompiledMethod* meth = get_method(state, cmd + 3);
-      if(meth) {
+      if(!meth->nil_p()) {
         allocate_breakpoints(meth);
         meth->breakpoints[0] ^= CUSTOM_BREAKPOINT;
         if(meth->breakpoints[0] & CUSTOM_BREAKPOINT)
@@ -524,7 +525,99 @@ namespace rubinius {
   }
 
   CompiledMethod* Debugger::get_method(STATE, const char* cmd) {
-    return NULL;
+    const char* p = cmd;
+    char method_name[1024];
+    uint32_t k = 0;
+    Class* cls;
+    uint32_t sz_meth = sizeof(method_name);
+
+    while(*p == ' ') ++p;
+
+    p = class_path(state, p, &cls);
+
+    if(!cls->nil_p()) {
+      while(*p && *p != ' ') {
+        k = k < sz_meth ? k : sz_meth - 1;
+        method_name[k++] = *p++;
+      }
+      k = k < sz_meth ? k : sz_meth - 1;
+      method_name[k] = '\0';
+
+      return get_method(state, cls, method_name);
+    }
+    return static_cast<CompiledMethod*>(Qnil);
+  }
+
+  CompiledMethod* Debugger::get_method(STATE, Class* cls, const char* method_name) {
+    LookupTable* tbl;
+    Object* obj;
+    bool is_meta = false;
+    Object* name = static_cast<Object*>(state->symbol(method_name));
+    CompiledMethod *cm, *nil = static_cast<CompiledMethod*>(Qnil);
+
+    #define SUITABLE_METACLASS \
+      cls = cls->metaclass(state);\
+      if(cls->nil_p()) return nil;\
+      tbl = cls->method_table();\
+      if(tbl->nil_p()) return nil;
+
+    tbl = cls->method_table();
+    if(tbl->nil_p()) {
+      SUITABLE_METACLASS
+      is_meta = true;
+    }
+    obj = tbl->fetch(state, name);
+    if(obj->nil_p()) {
+      if(is_meta) return nil;
+      SUITABLE_METACLASS
+      obj = tbl->fetch(state, name);
+    }
+    #undef SUITABLE_METACLASS
+    cm = try_as<CompiledMethod>(obj);
+    return cm ? cm : nil;
+  }
+
+  const char* Debugger::class_path(STATE, const char* cmd, Class** kls) {
+    const char* p = cmd;
+    char class_name[1024];
+    uint32_t k = 0, const_count = 0;
+    Class* cls = NULL;
+    uint32_t sz_cls = sizeof(class_name);
+
+    #define GET_CLASS \
+        if(const_count == 1 && strcmp(class_name, "Object") != 0)\
+          cls = try_as<Class>(G(object)->get_const(state, class_name));\
+        else if(const_count == 1)\
+          cls = G(object);\
+        else\
+          cls = try_as<Class>(cls->get_const(state, class_name));
+
+    while(*p) {
+      k = k < sz_cls ? k : sz_cls - 1;
+      if(*p == ':') {
+        while(*p == ':') ++p;
+        class_name[k] = '\0';
+        const_count++;
+        GET_CLASS
+        if(!cls || cls->nil_p()) break;
+        k = 0;
+      }
+      else if(*p == ' ') {
+        while(*p == ' ') ++p;
+        class_name[k] = '\0';
+        const_count++;
+        GET_CLASS
+        break;
+      }
+      else {
+        class_name[k++] = *p++;
+      }
+    }
+
+    #undef GET_CLASS
+    if(!cls) cls = static_cast<Class*>(Qnil);
+    *kls = cls;
+    return p;
   }
 }
 
