@@ -4,6 +4,7 @@
 #include "builtin/symbol.hpp"
 #include "builtin/fixnum.hpp"
 #include "builtin/lookuptable.hpp"
+#include "builtin/methodvisibility.hpp"
 
 #include "debugger.hpp"
 
@@ -554,6 +555,7 @@ namespace rubinius {
     bool is_meta = false;
     Object* name = static_cast<Object*>(state->symbol(method_name));
     CompiledMethod *cm, *nil = static_cast<CompiledMethod*>(Qnil);
+    MethodVisibility* vis;
 
     #define SUITABLE_METACLASS \
       mod = static_cast<Module*>(mod->metaclass(state));\
@@ -573,8 +575,14 @@ namespace rubinius {
       obj = tbl->fetch(state, name);
     }
     #undef SUITABLE_METACLASS
-    cm = try_as<CompiledMethod>(obj);
-    return cm ? cm : nil;
+    if((cm = try_as<CompiledMethod>(obj))) {
+      return cm;
+    } else if((vis = try_as<MethodVisibility>(obj))) {
+      cm = try_as<CompiledMethod>(vis->method());
+      return cm ? cm : nil;
+    } else {
+      return nil;
+    }
   }
 
   const char* Debugger::class_path(STATE, const char* cmd, Module** pmod) {
