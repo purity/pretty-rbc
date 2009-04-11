@@ -528,14 +528,14 @@ namespace rubinius {
     const char* p = cmd;
     char method_name[1024];
     uint32_t k = 0;
-    Class* cls;
+    Module* mod;
     uint32_t sz_meth = sizeof(method_name);
 
     while(*p == ' ') ++p;
 
-    p = class_path(state, p, &cls);
+    p = class_path(state, p, &mod);
 
-    if(!cls->nil_p()) {
+    if(!mod->nil_p()) {
       while(*p && *p != ' ') {
         k = k < sz_meth ? k : sz_meth - 1;
         method_name[k++] = *p++;
@@ -543,12 +543,12 @@ namespace rubinius {
       k = k < sz_meth ? k : sz_meth - 1;
       method_name[k] = '\0';
 
-      return get_method(state, cls, method_name);
+      return get_method(state, mod, method_name);
     }
     return static_cast<CompiledMethod*>(Qnil);
   }
 
-  CompiledMethod* Debugger::get_method(STATE, Class* cls, const char* method_name) {
+  CompiledMethod* Debugger::get_method(STATE, Module* mod, const char* method_name) {
     LookupTable* tbl;
     Object* obj;
     bool is_meta = false;
@@ -556,12 +556,12 @@ namespace rubinius {
     CompiledMethod *cm, *nil = static_cast<CompiledMethod*>(Qnil);
 
     #define SUITABLE_METACLASS \
-      cls = cls->metaclass(state);\
-      if(cls->nil_p()) return nil;\
-      tbl = cls->method_table();\
+      mod = static_cast<Module*>(mod->metaclass(state));\
+      if(mod->nil_p()) return nil;\
+      tbl = mod->method_table();\
       if(tbl->nil_p()) return nil;
 
-    tbl = cls->method_table();
+    tbl = mod->method_table();
     if(tbl->nil_p()) {
       SUITABLE_METACLASS
       is_meta = true;
@@ -577,46 +577,58 @@ namespace rubinius {
     return cm ? cm : nil;
   }
 
-  const char* Debugger::class_path(STATE, const char* cmd, Class** kls) {
+  const char* Debugger::class_path(STATE, const char* cmd, Module** pmod) {
     const char* p = cmd;
-    char class_name[1024];
+    char module_name[1024];
     uint32_t k = 0, const_count = 0;
+    Module* mod = NULL;
     Class* cls = NULL;
-    uint32_t sz_cls = sizeof(class_name);
+    uint32_t sz_mod = sizeof(module_name);
 
-    #define GET_CLASS \
-        if(const_count == 1 && strcmp(class_name, "Object") != 0)\
-          cls = try_as<Class>(G(object)->get_const(state, class_name));\
-        else if(const_count == 1)\
-          cls = G(object);\
-        else\
-          cls = try_as<Class>(cls->get_const(state, class_name));
+    #define GET_MODULE \
+        if(const_count == 1 && strcmp(module_name, "Object") != 0) {\
+          cls = try_as<Class>(G(object)->get_const(state, module_name));\
+          if(cls)\
+            mod = static_cast<Module*>(cls);\
+          else\
+            mod = try_as<Module>(G(object)->get_const(state, module_name));\
+        }\
+        else if(const_count == 1) {\
+          mod = static_cast<Module*>(G(object));\
+        }\
+        else {\
+          cls = try_as<Class>(mod->get_const(state, module_name));\
+          if(cls)\
+            mod = static_cast<Module*>(cls);\
+          else\
+            mod = try_as<Module>(mod->get_const(state, module_name));\
+        }
 
     while(*p) {
-      k = k < sz_cls ? k : sz_cls - 1;
+      k = k < sz_mod ? k : sz_mod - 1;
       if(*p == ':') {
         while(*p == ':') ++p;
-        class_name[k] = '\0';
+        module_name[k] = '\0';
         const_count++;
-        GET_CLASS
-        if(!cls || cls->nil_p()) break;
+        GET_MODULE
+        if(!mod || mod->nil_p()) break;
         k = 0;
       }
       else if(*p == ' ') {
         while(*p == ' ') ++p;
-        class_name[k] = '\0';
+        module_name[k] = '\0';
         const_count++;
-        GET_CLASS
+        GET_MODULE
         break;
       }
       else {
-        class_name[k++] = *p++;
+        module_name[k++] = *p++;
       }
     }
 
-    #undef GET_CLASS
-    if(!cls) cls = static_cast<Class*>(Qnil);
-    *kls = cls;
+    #undef GET_MODULE
+    if(!mod) mod = static_cast<Module*>(Qnil);
+    *pmod = mod;
     return p;
   }
 }
