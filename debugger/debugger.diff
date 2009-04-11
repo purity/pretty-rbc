@@ -1,5 +1,5 @@
 diff --git a/kernel/compiler/generator.rb b/kernel/compiler/generator.rb
-index 9e79d43..55c8ae7 100644
+index d4738a0..7d22742 100644
 --- a/kernel/compiler/generator.rb
 +++ b/kernel/compiler/generator.rb
 @@ -45,6 +45,7 @@ class Compiler
@@ -10,7 +10,7 @@ index 9e79d43..55c8ae7 100644
      end
  
      attr_reader :cache_size, :literals
-@@ -220,6 +221,11 @@ class Compiler
+@@ -221,6 +222,11 @@ class Compiler
  
        return unless what
  
@@ -22,7 +22,7 @@ index 9e79d43..55c8ae7 100644
        @ip += what.size
        if what.size == 1
          @stream << what.first
-@@ -230,6 +236,12 @@ class Compiler
+@@ -231,6 +237,12 @@ class Compiler
  
      def flush
        return unless @last
@@ -60,6 +60,27 @@ index 4c9df31..bb41f52 100644
  
      attr_accessor(name, Symbol);
      attr_accessor(iseq, InstructionSequence);
+diff --git a/vm/builtin/system.cpp b/vm/builtin/system.cpp
+index c1cdde2..5546505 100644
+--- a/vm/builtin/system.cpp
++++ b/vm/builtin/system.cpp
+@@ -43,6 +43,7 @@
+ #include "builtin/sendsite.hpp"
+ 
+ #include "instruments/stats.hpp"
++#include "debugger.hpp"
+ 
+ namespace rubinius {
+ 
+@@ -157,6 +158,8 @@ namespace rubinius {
+ 
+     if ( -1 == result ) {
+       Exception::errno_error(state, "fork() failed!");
++    } else if(result == 0) {
++      pthread_mutex_init(&state->shared.debug->mutex, NULL);
+     }
+ 
+     /*  @todo EVFLAG_FORKCHECK should remove need for any maintenance
 diff --git a/vm/helpers.cpp b/vm/helpers.cpp
 index caf7ac7..0e5e8a0 100644
 --- a/vm/helpers.cpp

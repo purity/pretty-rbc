@@ -18,4 +18,5 @@
   M1 is copied to P2 as M2. does P2 hang indefinitely when trying to acquire the mutex lock at M2?
   or is there enough information at M2 or elsewhere so that P2 recognizes the lock at M2 is not
   its own?
+  CONCLUSION: the child process (P2) hangs forever.
 
