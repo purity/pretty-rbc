@@ -1,5 +1,6 @@
 
-/* set RBX_DEBUG_DIR before starting rbx. pass the same directory to this program.
+/* run this app in two separate terminals. pass 'read' to one and 'write' to the other.
+   set RBX_DEBUG_DIR before starting rbx. pass the same directory to this program.
    delete rbx_read.txt and rbx_write.txt manually after debug session. */
 
 /* g++ -Wall -c rbx_debug_terminal.cpp; g++ -o rbx_debug_terminal rbx_debug_terminal.o */
@@ -9,11 +10,8 @@
 #include <stdlib.h>
 #include <string>
 
-uint32_t num_records = 0;
-
 const char* commands_legend =
     "[rdt] Commands:\n"
-    "      <enter> - poll for new message.\n"
     "      [pid] next (n) - set breakpoint after next instruction (if available) and execute.\n"
     "      [pid] step (s) - pause at the beginning of the next method that's called.\n"
     "      [pid] run (r) - pause at the next user-supplied breakpoint.\n"
@@ -54,37 +52,43 @@ void receive_debug_commands(const char* wfile) {
   char ssz[32];
   size_t len_out;
 
-  printf("[rdt] waiting for user input...\n");
-  fgets(out, sizeof(out), stdin);
+  while(1) {
 
-  rtrim(out);
-  len_out = strlen(out);
+    printf("[rdt] waiting for user input...\n");
 
-  if(len_out != 0) {
-
-    if((wd = fopen(wfile, "a")) == NULL) {
-      printf("[rdt] failed to send command. fopen error.\n");
+    if(fgets(out, sizeof(out), stdin) == NULL) {
+      printf("[rdt] failed to read from stdin\n");
       return;
     }
 
-    snprintf(ssz, sizeof(ssz), "%u\n", len_out);
-    str += ssz;
-    str += out;
+    rtrim(out);
+    len_out = strlen(out);
 
-    if(fwrite(str.c_str(), 1, str.size(), wd) < str.size()) {
-      printf("[rdt] failed to send command. fwrite error.\n");
+    if(len_out != 0) {
+
+      if((wd = fopen(wfile, "a")) == NULL) {
+        printf("[rdt] failed to send command. fopen error.\n");
+        return;
+      }
+
+      snprintf(ssz, sizeof(ssz), "%u\n", len_out);
+      str = ssz;
+      str += out;
+
+      if(fwrite(str.c_str(), 1, str.size(), wd) < str.size()) {
+        printf("[rdt] failed to send command. fwrite error.\n");
+        fclose(wd);
+        return;
+      }
+
       fclose(wd);
-      return;
     }
-
-    fclose(wd);
-    sleep(3);
   }
 }
 
-void poll_debug_file(const char* rfile, const char* wfile) {
+void poll_debug_file(const char* rfile) {
   FILE* rd;
-  uint32_t nth_record, sec_sleep = 10;
+  uint32_t nth_record, num_records = 0, sec_sleep = 10;
   int sz_record;
   char tmp[8192];
 
@@ -101,7 +105,7 @@ void poll_debug_file(const char* rfile, const char* wfile) {
     while(1) {
 
       if(fgets(tmp, sizeof(tmp), rd) == NULL) {
-        receive_debug_commands(wfile);
+        sleep(1);
         break;
       }
 
@@ -143,13 +147,15 @@ void poll_debug_file(const char* rfile, const char* wfile) {
 
 int main(int argc, char** argv) {
   std::string dir, rfile, wfile;
+  char* activity;
 
-  if(argc != 2) {
-    printf("USAGE: app dir\n");
+  if(argc != 3) {
+    printf("USAGE: app read/write dir\n");
     return 1;
   }
 
-  dir = argv[1];
+  activity = argv[1];
+  dir = argv[2];
 
   if(dir[dir.size() - 1] != '/') {
     dir.push_back('/');
@@ -160,9 +166,16 @@ int main(int argc, char** argv) {
   wfile = dir;
   wfile += "rbx_read.txt";
 
-  printf(commands_legend);
-
-  poll_debug_file(rfile.c_str(), wfile.c_str());
+  if(strcmp(activity, "write") == 0) {
+    printf(commands_legend);
+    receive_debug_commands(wfile.c_str());
+  }
+  else if(strcmp(activity, "read") == 0) {
+    poll_debug_file(rfile.c_str());
+  }
+  else {
+    printf("activity not recognized (try read/write)\n");
+  }
 
   return 0;
 }

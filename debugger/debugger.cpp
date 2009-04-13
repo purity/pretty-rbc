@@ -303,6 +303,8 @@ namespace rubinius {
           write_record("[debug] breakpoint set\n");
         else
           write_record("[debug] breakpoint unset\n");
+      } else {
+        write_record("[debug] unsuitable caller\n");
       }
       return false;
     }
@@ -332,9 +334,7 @@ namespace rubinius {
             pointer_role(call_frame->stack_at((size_t)sp)));
         str += tmp;
       }
-      if(str.size() > 14)
-        write_record(str.c_str());
-
+      write_record(str.c_str());
       return false;
     }
     else if(strcmp(cmd, "l") == 0) {
@@ -349,9 +349,7 @@ namespace rubinius {
             pointer_role(scp->get_local(i)));
         str += tmp;
       }
-      if(str.size() > 15)
-        write_record(str.c_str());
-
+      write_record(str.c_str());
       return false;
     }
     else if(strcmp(cmd, "f") == 0) {
