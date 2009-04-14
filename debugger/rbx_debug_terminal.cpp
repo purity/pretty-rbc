@@ -1,5 +1,5 @@
 
-/* run this app in two separate terminals. pass 'read' to one and 'write' to the other.
+/* run this app in two separate terminals. pass 'send' to one and 'receive' to the other.
    set RBX_DEBUG_DIR before starting rbx. pass the same directory to this program.
    delete rbx_read.txt and rbx_write.txt manually after debug session. */
 
@@ -45,7 +45,7 @@ bool numeric_string(char* str) {
   return true;
 }
 
-void receive_debug_commands(const char* wfile) {
+void write_debug_commands(const char* wfile) {
   FILE* wd;
   std::string str;
   char out[512];
@@ -134,6 +134,7 @@ void poll_debug_file(const char* rfile) {
       }
 
       if(nth_record >= num_records) {
+        printf("[rdt] #%u\n", nth_record + 1);
         printf(tmp);
         ++num_records;
       }
@@ -150,7 +151,7 @@ int main(int argc, char** argv) {
   char* activity;
 
   if(argc != 3) {
-    printf("USAGE: app read/write dir\n");
+    printf("USAGE: app send/receive dir\n");
     return 1;
   }
 
@@ -166,15 +167,15 @@ int main(int argc, char** argv) {
   wfile = dir;
   wfile += "rbx_read.txt";
 
-  if(strcmp(activity, "write") == 0) {
+  if(strcmp(activity, "send") == 0) {
     printf(commands_legend);
-    receive_debug_commands(wfile.c_str());
+    write_debug_commands(wfile.c_str());
   }
-  else if(strcmp(activity, "read") == 0) {
+  else if(strcmp(activity, "receive") == 0) {
     poll_debug_file(rfile.c_str());
   }
   else {
-    printf("activity not recognized (try read/write)\n");
+    printf("activity not recognized (try send/receive)\n");
   }
 
   return 0;
