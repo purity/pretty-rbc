@@ -118,6 +118,7 @@ namespace rubinius {
     std::string str;
     char tmp[2048];
     opcode op = get_opcode(state, cm->iseq()->opcodes(), ip + 1);
+    Symbol* name;
 
     snprintf(tmp, sizeof(tmp), "[debug] process id: %p, thread id: %p,\n"
                             "        self pointer: %p, method pointer: %p,\n"
@@ -128,25 +129,24 @@ namespace rubinius {
     str += tmp;
 
     if(kind_of<Class>(self) || kind_of<Module>(self)) {
-
-      if(static_cast<Module*>(self)->name() &&
-          !static_cast<Module*>(self)->name()->nil_p()) {
+      name = static_cast<Module*>(self)->name();
+      if(SYMBOL_P(name)) {
         snprintf(tmp, sizeof(tmp), "        self class name: '%s'\n",
-            static_cast<Module*>(self)->name()->c_str(state));
+            name->c_str(state));
         str += tmp;
       }
-    }
-    else {
-      if(self->class_object(state)->name() &&
-          !self->class_object(state)->name()->nil_p()) {
+    } else {
+      name = self->class_object(state)->name();
+      if(SYMBOL_P(name)) {
         snprintf(tmp, sizeof(tmp), "        self class name: '%s'\n",
-            self->class_object(state)->name()->c_str(state));
+            name->c_str(state));
         str += tmp;
       }
     }
 
-    if(cm->name() && !cm->name()->nil_p()) {
-      snprintf(tmp, sizeof(tmp), "        method name: '%s'\n", cm->name()->c_str(state));
+    if(SYMBOL_P(cm->name())) {
+      snprintf(tmp, sizeof(tmp), "        method name: '%s'\n",
+          cm->name()->c_str(state));
       str += tmp;
     }
 
@@ -218,173 +218,224 @@ namespace rubinius {
     }
   }
 
+  // returns true if the thread should not read any further commands before
+  // executing its next instruction
+  //
   bool Debugger::execute_command(STATE, CallFrame* call_frame, const char* cmd) {
-    int ip = call_frame->ip - 1;
-    CompiledMethod* cm = call_frame->cm;
-    Tuple* ops = cm->iseq()->opcodes();
-    opcode op = get_opcode(state, ops, ip + 1);
-    uint32_t num_ops = ops->num_fields();
-    size_t ins_size = InstructionSequence::instruction_width(op);
     uintptr_t pid;
 
     cmd = extract_pid(cmd, &pid);
     if(pid != 0 && pid != (uintptr_t)getpid()) return false;
 
     if(strcmp(cmd, "n") == 0) {
-      opcode jip;
-
-      switch(op) {
-      case InstructionSequence::insn_goto_if_false:
-      case InstructionSequence::insn_goto_if_true:
-      case InstructionSequence::insn_goto_if_defined:
-      case InstructionSequence::insn_goto:
-        jip = static_cast<Fixnum*>(ops->at(state, ip + 2))->to_native();
-        if(jip < num_ops) {
-          cm->breakpoints[jip] |= NEXT_BREAKPOINT;
-          options |= IGNORE_STEP_BREAKPOINT;
-        }
-      }
-      if(ip + ins_size + 1 < num_ops) {
-        cm->breakpoints[ip + ins_size + 1] |= NEXT_BREAKPOINT;
-        options |= IGNORE_STEP_BREAKPOINT;
-      }
-      options |= IGNORE_CUSTOM_BREAKPOINT;
+      return command_n(state, call_frame);
     }
     else if(strcmp(cmd, "s") == 0) {
-      options |= IGNORE_CUSTOM_BREAKPOINT;
+      return command_s(state, call_frame);
     }
     else if(strcmp(cmd, "r") == 0) {
-      options |= IGNORE_STEP_BREAKPOINT;
+      return command_r(state, call_frame);
     }
     else if(strncmp(cmd, "bpc", 3) == 0) {
-      uint32_t offset;
-      if(extract_number(cmd, &offset)) {
-        bp_instruction_count = instruction_count + offset;
-        options |= IGNORE_STEP_BREAKPOINT;
-        options |= IGNORE_CUSTOM_BREAKPOINT;
-      }
-      else {
-        write_record("[debug] offset not given for bpc command\n");
-        return false;
-      }
+      return command_bpc(state, call_frame, cmd);
     }
     else if(strncmp(cmd, "bpi", 3) == 0) {
-      uint32_t bpip, ydip = 0, k, nth_ins = 0;
-      opcode oc;
-
-      if(extract_number(cmd, &bpip)) {
-        for(k = 0; k < num_ops; nth_ins++) {
-          if(bpip <= k) {
-            if(bpip == k && nth_ins % 2 == 0) ydip = k;
-            break;
-          }
-          if(nth_ins % 2 == 0) ydip = k;
-          oc = get_opcode(state, ops, k);
-          k += InstructionSequence::instruction_width(oc);
-        }
-        cm->breakpoints[ydip] ^= CUSTOM_BREAKPOINT;
-        if(cm->breakpoints[ydip] & CUSTOM_BREAKPOINT)
-          write_record("[debug] breakpoint set\n");
-        else
-          write_record("[debug] breakpoint unset\n");
-      }
-      else {
-        write_record("[debug] ip not given for bpi command\n");
-      }
-      return false;
+      return command_bpi(state, call_frame, cmd);
     }
     else if(strcmp(cmd, "bpr") == 0) {
-      CallFrame* frm = call_frame->previous;
-
-      if(frm && frm->cm && frm->cm->breakpoints &&
-            (uint32_t)frm->ip < frm->cm->iseq()->opcodes()->num_fields()) {
-        frm->cm->breakpoints[frm->ip] ^= CUSTOM_BREAKPOINT;
-        if(frm->cm->breakpoints[frm->ip] & CUSTOM_BREAKPOINT)
-          write_record("[debug] breakpoint set\n");
-        else
-          write_record("[debug] breakpoint unset\n");
-      } else {
-        write_record("[debug] unsuitable caller\n");
-      }
-      return false;
+      return command_bpr(state, call_frame);
     }
     else if(strncmp(cmd, "bpm", 3) == 0) {
-      CompiledMethod* meth = get_method(state, cmd + 3);
-      if(!meth->nil_p()) {
-        allocate_breakpoints(meth);
-        meth->breakpoints[0] ^= CUSTOM_BREAKPOINT;
-        if(meth->breakpoints[0] & CUSTOM_BREAKPOINT)
-          write_record("[debug] breakpoint set\n");
-        else
-          write_record("[debug] breakpoint unset\n");
-      }
-      else {
-        write_record("[debug] method not found\n");
-      }
-      return false;
+      return command_bpm(state, call_frame, cmd);
     }
     else if(strcmp(cmd, "stk") == 0) {
-      std::string str = "[debug] stack\n";
-      int sp = call_frame->calculate_sp();
-      char tmp[256];
-
-      for(; sp >= 0; sp--) {
-        snprintf(tmp, sizeof(tmp), "%d: %p (%s)\n",
-            sp, call_frame->stack_at((size_t)sp),
-            pointer_role(call_frame->stack_at((size_t)sp)));
-        str += tmp;
-      }
-      write_record(str.c_str());
-      return false;
+      return command_stk(state, call_frame);
     }
     else if(strcmp(cmd, "l") == 0) {
-      VariableScope* scp = call_frame->scope;
-      int num_locals = scp->number_of_locals();
-      int i;
-      char tmp[256];
-      std::string str = "[debug] locals\n";
-
-      for(i = 0; i < num_locals; i++) {
-        snprintf(tmp, sizeof(tmp), "%d: %p (%s)\n", i, scp->get_local(i),
-            pointer_role(scp->get_local(i)));
-        str += tmp;
-      }
-      write_record(str.c_str());
-      return false;
+      return command_l(state, call_frame);
     }
     else if(strcmp(cmd, "f") == 0) {
-      uint32_t frame_count = 0;
-      CallFrame* frm = call_frame;
-      char tmp[256];
-      std::string str = "[debug] call frame\n";
-
-      while(frm) {
-        ++frame_count;
-        frm = frm->previous;
-      }
-
-      snprintf(tmp, sizeof(tmp), "frames: %u\n", frame_count);
-      str += tmp;
-      snprintf(tmp, sizeof(tmp), "args: %d\n", call_frame->args);
-      str += tmp;
-      snprintf(tmp, sizeof(tmp), "stack size: %d\n", call_frame->stack_size);
-      str += tmp;
-      snprintf(tmp, sizeof(tmp), "locals: %d\n", call_frame->scope->number_of_locals());
-      str += tmp;
-      snprintf(tmp, sizeof(tmp), "unwind: %d\n", call_frame->current_unwind);
-      str += tmp;
-      snprintf(tmp, sizeof(tmp), "opcodes: %u\n", num_ops);
-      str += tmp;
-
-      write_record(str.c_str());
-      return false;
+      return command_f(state, call_frame);
     }
     else {
       write_record("[debug] command not recognized\n");
       return false;
     }
+  }
 
-    return true;  // don't read anymore commands
+  bool Debugger::command_n(STATE, CallFrame* call_frame) {
+    CompiledMethod* cm = call_frame->cm;
+    int ip = call_frame->ip - 1;
+    Tuple* ops = cm->iseq()->opcodes();
+    opcode op = get_opcode(state, ops, ip + 1);
+    uint32_t num_ops = ops->num_fields();
+    size_t ins_size = InstructionSequence::instruction_width(op);
+    opcode jip;
+
+    switch(op) {
+    case InstructionSequence::insn_goto_if_false:
+    case InstructionSequence::insn_goto_if_true:
+    case InstructionSequence::insn_goto_if_defined:
+    case InstructionSequence::insn_goto:
+      jip = static_cast<Fixnum*>(ops->at(state, ip + 2))->to_native();
+      if(jip < num_ops) {
+        cm->breakpoints[jip] |= NEXT_BREAKPOINT;
+        options |= IGNORE_STEP_BREAKPOINT;
+      }
+    }
+    if(ip + ins_size + 1 < num_ops) {
+      cm->breakpoints[ip + ins_size + 1] |= NEXT_BREAKPOINT;
+      options |= IGNORE_STEP_BREAKPOINT;
+    }
+    options |= IGNORE_CUSTOM_BREAKPOINT;
+    return true;
+  }
+
+  bool Debugger::command_s(STATE, CallFrame* call_frame) {
+    options |= IGNORE_CUSTOM_BREAKPOINT;
+    return true;
+  }
+
+  bool Debugger::command_r(STATE, CallFrame* call_frame) {
+    options |= IGNORE_STEP_BREAKPOINT;
+    return true;
+  }
+
+  bool Debugger::command_bpc(STATE, CallFrame* call_frame, const char* cmd) {
+    uint32_t offset;
+    if(extract_number(cmd, &offset)) {
+      bp_instruction_count = instruction_count + offset;
+      options |= IGNORE_STEP_BREAKPOINT;
+      options |= IGNORE_CUSTOM_BREAKPOINT;
+      return true;
+    }
+    else {
+      write_record("[debug] offset not given for bpc command\n");
+      return false;
+    }
+  }
+
+  bool Debugger::command_bpi(STATE, CallFrame* call_frame, const char* cmd) {
+    CompiledMethod* cm = call_frame->cm;
+    Tuple* ops = cm->iseq()->opcodes();
+    uint32_t num_ops = ops->num_fields();
+    uint32_t bpip, ydip = 0, k, nth_ins = 0;
+    opcode op;
+
+    if(extract_number(cmd, &bpip)) {
+      for(k = 0; k < num_ops; nth_ins++) {
+        if(bpip <= k) {
+          if(bpip == k && nth_ins % 2 == 0) ydip = k;
+          break;
+        }
+        if(nth_ins % 2 == 0) ydip = k;
+        op = get_opcode(state, ops, k);
+        k += InstructionSequence::instruction_width(op);
+      }
+      cm->breakpoints[ydip] ^= CUSTOM_BREAKPOINT;
+      if(cm->breakpoints[ydip] & CUSTOM_BREAKPOINT)
+        write_record("[debug] breakpoint set\n");
+      else
+        write_record("[debug] breakpoint unset\n");
+    }
+    else {
+      write_record("[debug] ip not given for bpi command\n");
+    }
+    return false;
+  }
+
+  bool Debugger::command_bpr(STATE, CallFrame* call_frame) {
+    CallFrame* frm = call_frame->previous;
+
+    if(frm && frm->cm && frm->cm->breakpoints &&
+          (uint32_t)frm->ip < frm->cm->iseq()->opcodes()->num_fields()) {
+      frm->cm->breakpoints[frm->ip] ^= CUSTOM_BREAKPOINT;
+      if(frm->cm->breakpoints[frm->ip] & CUSTOM_BREAKPOINT)
+        write_record("[debug] breakpoint set\n");
+      else
+        write_record("[debug] breakpoint unset\n");
+    } else {
+      write_record("[debug] unsuitable caller\n");
+    }
+    return false;
+  }
+
+  bool Debugger::command_bpm(STATE, CallFrame* call_frame, const char* cmd) {
+    CompiledMethod* meth = get_method(state, cmd + 3);
+    if(!meth->nil_p()) {
+      allocate_breakpoints(meth);
+      meth->breakpoints[0] ^= CUSTOM_BREAKPOINT;
+      if(meth->breakpoints[0] & CUSTOM_BREAKPOINT)
+        write_record("[debug] breakpoint set\n");
+      else
+        write_record("[debug] breakpoint unset\n");
+    }
+    else {
+      write_record("[debug] method not found\n");
+    }
+    return false;
+  }
+
+  bool Debugger::command_stk(STATE, CallFrame* call_frame) {
+    std::string str = "[debug] stack\n";
+    int sp = call_frame->calculate_sp();
+    char tmp[256];
+
+    for(; sp >= 0; sp--) {
+      snprintf(tmp, sizeof(tmp), "%d: %p (%s)\n",
+          sp, call_frame->stack_at((size_t)sp),
+          pointer_role(call_frame->stack_at((size_t)sp)));
+      str += tmp;
+    }
+    write_record(str.c_str());
+    return false;
+  }
+
+  bool Debugger::command_l(STATE, CallFrame* call_frame) {
+    VariableScope* scp = call_frame->scope;
+    int num_locals = scp->number_of_locals();
+    int i;
+    char tmp[256];
+    std::string str = "[debug] locals\n";
+
+    for(i = 0; i < num_locals; i++) {
+      snprintf(tmp, sizeof(tmp), "%d: %p (%s)\n", i, scp->get_local(i),
+          pointer_role(scp->get_local(i)));
+      str += tmp;
+    }
+    write_record(str.c_str());
+    return false;
+  }
+
+  bool Debugger::command_f(STATE, CallFrame* call_frame) {
+    CompiledMethod* cm = call_frame->cm;
+    Tuple* ops = cm->iseq()->opcodes();
+    uint32_t num_ops = ops->num_fields();
+    uint32_t frame_count = 0;
+    CallFrame* frm = call_frame;
+    char tmp[256];
+    std::string str = "[debug] call frame\n";
+
+    while(frm) {
+      ++frame_count;
+      frm = frm->previous;
+    }
+
+    snprintf(tmp, sizeof(tmp), "frames: %u\n", frame_count);
+    str += tmp;
+    snprintf(tmp, sizeof(tmp), "args: %d\n", call_frame->args);
+    str += tmp;
+    snprintf(tmp, sizeof(tmp), "stack size: %d\n", call_frame->stack_size);
+    str += tmp;
+    snprintf(tmp, sizeof(tmp), "locals: %d\n", call_frame->scope->number_of_locals());
+    str += tmp;
+    snprintf(tmp, sizeof(tmp), "unwind: %d\n", call_frame->current_unwind);
+    str += tmp;
+    snprintf(tmp, sizeof(tmp), "opcodes: %u\n", num_ops);
+    str += tmp;
+
+    write_record(str.c_str());
+    return false;
   }
 
   // expects the pid to be at the beginning of the string

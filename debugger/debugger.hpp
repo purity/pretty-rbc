@@ -51,6 +51,18 @@ namespace rubinius {
     CompiledMethod* get_method(STATE, Module* mod, const char* method_name);
     const char* class_path(STATE, const char* cmd, Module** pmod);
 
+  private:
+    bool command_n(STATE, CallFrame* call_frame);
+    bool command_s(STATE, CallFrame* call_frame);
+    bool command_r(STATE, CallFrame* call_frame);
+    bool command_bpc(STATE, CallFrame* call_frame, const char* cmd);
+    bool command_bpi(STATE, CallFrame* call_frame, const char* cmd);
+    bool command_bpr(STATE, CallFrame* call_frame);
+    bool command_bpm(STATE, CallFrame* call_frame, const char* cmd);
+    bool command_stk(STATE, CallFrame* call_frame);
+    bool command_l(STATE, CallFrame* call_frame);
+    bool command_f(STATE, CallFrame* call_frame);
+
   public:
     Debugger();
     void run(STATE, CallFrame* call_frame);
