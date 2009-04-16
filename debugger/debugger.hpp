@@ -38,13 +38,15 @@ namespace rubinius {
     void set_files();
     void write_record(const char* out);
     void write_header(STATE, CallFrame* call_frame);
+    void generate_header(STATE, CallFrame* call_frame, std::string& str);
     bool execute_command(STATE, CallFrame* call_frame, const char* cmd);
     void poll_file(STATE, CallFrame* call_frame);
     const char* extract_pid(const char* cmd, uintptr_t* pid);
     const char* extract_number(const char* cmd, uint32_t* num);
     void rtrim(char* str);
     bool numeric_string(char* str);
-    opcode get_opcode(STATE, Tuple* tup, uint32_t idx);
+    opcode get_opcode_ins(STATE, Tuple* tup, uint32_t idx);
+    opcode get_opcode_arg(STATE, Tuple* tup, uint32_t idx);
     const char* pointer_role(Object* obj);
     void allocate_breakpoints(CompiledMethod* cm);
     CompiledMethod* get_method(STATE, const char* cmd);

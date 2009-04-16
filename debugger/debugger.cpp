@@ -111,20 +111,20 @@ namespace rubinius {
     fclose(wd);
   }
 
-  void Debugger::write_header(STATE, CallFrame* call_frame) {
+  void Debugger::generate_header(STATE, CallFrame* call_frame, std::string& str) {
     Object* self = call_frame->scope->self();
     CompiledMethod* cm = call_frame->cm;
     int ip = call_frame->ip - 1;
-    std::string str;
     char tmp[2048];
-    opcode op = get_opcode(state, cm->iseq()->opcodes(), ip + 1);
+    opcode op = get_opcode_ins(state, cm->iseq()->opcodes(), ip + 1);
     Symbol* name;
 
     snprintf(tmp, sizeof(tmp), "[debug] process id: %p, thread id: %p,\n"
                             "        self pointer: %p, method pointer: %p,\n"
-                            "        sp: %d, ip: %d, instruction: '%s'\n",
+                            "        sp: %d, ip: %d, line: %d,\n"
+                            "        instruction: '%s'\n",
         (void*)getpid(), (void*)pthread_self(), self, cm,
-        call_frame->calculate_sp(), ip + 1,
+        call_frame->calculate_sp(), ip + 1, cm->line(state, ip + 1),
         InstructionSequence::get_instruction_name(op));
     str += tmp;
 
@@ -154,7 +154,11 @@ namespace rubinius {
       snprintf(tmp, sizeof(tmp), "        backend_method_ is NULL\n");
       str += tmp;
     }
+  }
 
+  void Debugger::write_header(STATE, CallFrame* call_frame) {
+    std::string str;
+    generate_header(state, call_frame, str);
     write_record(str.c_str());
   }
 
@@ -267,7 +271,7 @@ namespace rubinius {
     CompiledMethod* cm = call_frame->cm;
     int ip = call_frame->ip - 1;
     Tuple* ops = cm->iseq()->opcodes();
-    opcode op = get_opcode(state, ops, ip + 1);
+    opcode op = get_opcode_ins(state, ops, ip + 1);
     uint32_t num_ops = ops->num_fields();
     size_t ins_size = InstructionSequence::instruction_width(op);
     opcode jip;
@@ -277,7 +281,7 @@ namespace rubinius {
     case InstructionSequence::insn_goto_if_true:
     case InstructionSequence::insn_goto_if_defined:
     case InstructionSequence::insn_goto:
-      jip = static_cast<Fixnum*>(ops->at(state, ip + 2))->to_native();
+      jip = get_opcode_arg(state, ops, ip + 2);
       if(jip < num_ops) {
         cm->breakpoints[jip] |= NEXT_BREAKPOINT;
         options |= IGNORE_STEP_BREAKPOINT;
@@ -329,7 +333,7 @@ namespace rubinius {
           break;
         }
         if(nth_ins % 2 == 0) ydip = k;
-        op = get_opcode(state, ops, k);
+        op = get_opcode_ins(state, ops, k);
         k += InstructionSequence::instruction_width(op);
       }
       cm->breakpoints[ydip] ^= CUSTOM_BREAKPOINT;
@@ -433,6 +437,10 @@ namespace rubinius {
     str += tmp;
     snprintf(tmp, sizeof(tmp), "opcodes: %u\n", num_ops);
     str += tmp;
+    if(SYMBOL_P(cm->file())) {
+      snprintf(tmp, sizeof(tmp), "file: '%s'\n", cm->file()->c_str(state));
+      str += tmp;
+    }
 
     write_record(str.c_str());
     return false;
@@ -539,11 +547,13 @@ namespace rubinius {
     return true;
   }
 
-  // only use with instruction opcode, not the arg opcodes
-  //
-  opcode Debugger::get_opcode(STATE, Tuple* tup, uint32_t idx) {
+  opcode Debugger::get_opcode_ins(STATE, Tuple* tup, uint32_t idx) {
     return tup->at(state, idx)->nil_p() ? 0 :
         static_cast<Fixnum*>(tup->at(state, idx))->to_native();
+  }
+
+  opcode Debugger::get_opcode_arg(STATE, Tuple* tup, uint32_t idx) {
+    return static_cast<Fixnum*>(tup->at(state, idx))->to_native();
   }
 
   const char* Debugger::pointer_role(Object* obj) {
