@@ -13,14 +13,14 @@
 const char* commands_legend =
     "[rdt] Commands:\n"
     "      [pid] next (n) - set breakpoint after next instruction (if available) and execute.\n"
-    "      [pid] step (s) - pause at the beginning of the next method that's called.\n"
+    "      [pid] step (s) - pause at the beginning of a method.\n"
     "      [pid] run (r) - pause at the next user-supplied breakpoint.\n"
     "      [pid] breakpoint (bpm) [class path] [method] - \n"
     "              toggle the breakpoint flag at the first instruction of the\n"
     "              specified method.\n"
     "      [pid] breakpoint (bpi) [ip] - \n"
     "              toggle the breakpoint flag at the specified instruction in the\n"
-    "              currently executing method.\n"
+    "              foreground method.\n"
     "      [pid] breakpoint (bpr) - toggle the breakpoint flag at the sender's return address.\n"
     "      [pid] breakpoint (bpc) [offset] - \n"
     "              pause when the VM instruction count equals current + offset.\n"
@@ -29,6 +29,7 @@ const char* commands_legend =
     "      [pid] locals (l) - print contents of the locals.\n"
     "      [pid] object-local (ol) [index] - print local object metadata.\n"
     "      [pid] object-stack (os) [sp] - print stack object metadata.\n"
+    "      [pid] backtrace (bt) [file] - write stack trace.\n"
     "";
 
 void rtrim(char* str) {   // don't use if strlen can equal 0

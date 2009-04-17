@@ -261,6 +261,9 @@ namespace rubinius {
     else if(strcmp(cmd, "f") == 0) {
       return command_f(state, call_frame);
     }
+    else if(strncmp(cmd, "bt", 2) == 0) {
+      return command_bt(state, call_frame, cmd);
+    }
     else {
       write_record("[debug] command not recognized\n");
       return false;
@@ -443,6 +446,35 @@ namespace rubinius {
     }
 
     write_record(str.c_str());
+    return false;
+  }
+
+  bool Debugger::command_bt(STATE, CallFrame* call_frame, const char* cmd) {
+    FILE* wd;
+    const char* p = cmd + 2;
+    std::string str;
+    char file[1024];
+    uint32_t k = 0, sz_file = sizeof(file);
+
+    while(*p == ' ') ++p;
+
+    while(*p && *p != ' ') {
+      k = k < sz_file ? k : sz_file - 1;
+      file[k++] = *p++;
+    }
+    k = k < sz_file ? k : sz_file - 1;
+    file[k] = '\0';
+
+    if((wd = fopen(file, "w")) == NULL) {
+      write_record("[debug] failed to write backtrace\n");
+      return false;
+    }
+
+    get_backtrace(state, call_frame, str);
+    fwrite(str.c_str(), 1, str.size(), wd);
+    fclose(wd);
+
+    write_record("[debug] backtrace written\n");
     return false;
   }
 
@@ -697,6 +729,28 @@ namespace rubinius {
     if(!mod) mod = static_cast<Module*>(Qnil);
     *pmod = mod;
     return p;
+  }
+
+  void Debugger::get_backtrace(STATE, CallFrame* call_frame, std::string& str) {
+    CallFrame* frm = call_frame;
+    std::string item;
+    char tmp[1024];
+
+    while(frm) {
+      if(!frm->cm) {
+        frm = frm->previous;
+        continue;
+      }
+      item = "";
+      generate_header(state, frm, item);
+      if(SYMBOL_P(frm->cm->file())) {
+        snprintf(tmp, sizeof(tmp), "        file: '%s'\n",
+            frm->cm->file()->c_str(state));
+        item += tmp;
+      }
+      str.insert(0, item);
+      frm = frm->previous;
+    }
   }
 }
 

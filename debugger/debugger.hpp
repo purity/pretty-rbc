@@ -52,6 +52,7 @@ namespace rubinius {
     CompiledMethod* get_method(STATE, const char* cmd);
     CompiledMethod* get_method(STATE, Module* mod, const char* method_name);
     const char* class_path(STATE, const char* cmd, Module** pmod);
+    void get_backtrace(STATE, CallFrame* call_frame, std::string& str);
 
   private:
     bool command_n(STATE, CallFrame* call_frame);
@@ -64,6 +65,7 @@ namespace rubinius {
     bool command_stk(STATE, CallFrame* call_frame);
     bool command_l(STATE, CallFrame* call_frame);
     bool command_f(STATE, CallFrame* call_frame);
+    bool command_bt(STATE, CallFrame* call_frame, const char* cmd);
 
   public:
     Debugger();
