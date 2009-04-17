@@ -450,9 +450,7 @@ namespace rubinius {
   }
 
   bool Debugger::command_bt(STATE, CallFrame* call_frame, const char* cmd) {
-    FILE* wd;
     const char* p = cmd + 2;
-    std::string str;
     char file[1024];
     uint32_t k = 0, sz_file = sizeof(file);
 
@@ -465,16 +463,11 @@ namespace rubinius {
     k = k < sz_file ? k : sz_file - 1;
     file[k] = '\0';
 
-    if((wd = fopen(file, "w")) == NULL) {
+    if(write_backtrace(state, call_frame, file)) {
+      write_record("[debug] backtrace written\n");
+    } else {
       write_record("[debug] failed to write backtrace\n");
-      return false;
     }
-
-    get_backtrace(state, call_frame, str);
-    fwrite(str.c_str(), 1, str.size(), wd);
-    fclose(wd);
-
-    write_record("[debug] backtrace written\n");
     return false;
   }
 
@@ -731,26 +724,37 @@ namespace rubinius {
     return p;
   }
 
-  void Debugger::get_backtrace(STATE, CallFrame* call_frame, std::string& str) {
+  bool Debugger::write_backtrace(STATE, CallFrame* call_frame, const char* file) {
+    FILE* wd;
     CallFrame* frm = call_frame;
-    std::string item;
+    std::string str;
     char tmp[1024];
+
+    if((wd = fopen(file, "w")) == NULL) return false;
+    fclose(wd);
+    if((wd = fopen(file, "a")) == NULL) return false;
 
     while(frm) {
       if(!frm->cm) {
         frm = frm->previous;
         continue;
       }
-      item = "";
-      generate_header(state, frm, item);
+      str = "";
+      generate_header(state, frm, str);
       if(SYMBOL_P(frm->cm->file())) {
         snprintf(tmp, sizeof(tmp), "        file: '%s'\n",
             frm->cm->file()->c_str(state));
-        item += tmp;
+        str += tmp;
       }
-      str.insert(0, item);
+      if(fwrite(str.c_str(), 1, str.size(), wd) < str.size()) {
+        fclose(wd);
+        return false;
+      }
       frm = frm->previous;
     }
+
+    fclose(wd);
+    return true;
   }
 }
 

@@ -52,7 +52,7 @@ namespace rubinius {
     CompiledMethod* get_method(STATE, const char* cmd);
     CompiledMethod* get_method(STATE, Module* mod, const char* method_name);
     const char* class_path(STATE, const char* cmd, Module** pmod);
-    void get_backtrace(STATE, CallFrame* call_frame, std::string& str);
+    bool write_backtrace(STATE, CallFrame* call_frame, const char* file);
 
   private:
     bool command_n(STATE, CallFrame* call_frame);
