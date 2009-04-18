@@ -49,7 +49,7 @@ namespace rubinius {
     opcode get_opcode_arg(STATE, Tuple* tup, uint32_t idx);
     const char* pointer_role(Object* obj);
     void allocate_breakpoints(CompiledMethod* cm);
-    CompiledMethod* get_method(STATE, const char* cmd);
+    const char* get_method(STATE, const char* cmd, CompiledMethod** pmeth);
     CompiledMethod* get_method(STATE, Module* mod, const char* method_name);
     const char* class_path(STATE, const char* cmd, Module** pmod);
     bool write_backtrace(STATE, CallFrame* call_frame, const char* file);

@@ -323,29 +323,48 @@ namespace rubinius {
   }
 
   bool Debugger::command_bpi(STATE, CallFrame* call_frame, const char* cmd) {
-    CompiledMethod* cm = call_frame->cm;
-    Tuple* ops = cm->iseq()->opcodes();
-    uint32_t num_ops = ops->num_fields();
+    const char* p = cmd + 3;
+    CallFrame* frm = call_frame;
+    CompiledMethod* cm;
+    Tuple* ops;
+    uint32_t num_ops, idx;
     uint32_t bpip, ydip = 0, k, nth_ins = 0;
     opcode op;
 
-    if(extract_number(cmd, &bpip)) {
-      for(k = 0; k < num_ops; nth_ins++) {
-        if(bpip <= k) {
-          if(bpip == k && nth_ins % 2 == 0) ydip = k;
+    if((p = extract_number(p, &bpip))) {
+      extract_number(p, &idx);
+      while(idx > 0) {
+        if(frm->cm) --idx;
+        if(frm->previous)
+          frm = frm->previous;
+        else
           break;
-        }
-        if(nth_ins % 2 == 0) ydip = k;
-        op = get_opcode_ins(state, ops, k);
-        k += InstructionSequence::instruction_width(op);
       }
-      cm->breakpoints[ydip] ^= CUSTOM_BREAKPOINT;
-      if(cm->breakpoints[ydip] & CUSTOM_BREAKPOINT)
-        write_record("[debug] breakpoint set\n");
-      else
-        write_record("[debug] breakpoint unset\n");
-    }
-    else {
+      if(frm->cm) {
+        allocate_breakpoints(frm->cm);
+        cm = frm->cm;
+        ops = cm->iseq()->opcodes();
+        num_ops = ops->num_fields();
+
+        for(k = 0; k < num_ops; nth_ins++) {
+          if(bpip <= k) {
+            if(bpip == k && nth_ins % 2 == 0) ydip = k;
+            break;
+          }
+          if(nth_ins % 2 == 0) ydip = k;
+          op = get_opcode_ins(state, ops, k);
+          k += InstructionSequence::instruction_width(op);
+        }
+        cm->breakpoints[ydip] ^= CUSTOM_BREAKPOINT;
+        if(cm->breakpoints[ydip] & CUSTOM_BREAKPOINT)
+          write_record("[debug] breakpoint set\n");
+        else
+          write_record("[debug] breakpoint unset\n");
+      }
+      else {
+        write_record("[debug] unsuitable frame\n");
+      }
+    } else {
       write_record("[debug] ip not given for bpi command\n");
     }
     return false;
@@ -354,8 +373,9 @@ namespace rubinius {
   bool Debugger::command_bpr(STATE, CallFrame* call_frame) {
     CallFrame* frm = call_frame->previous;
 
-    if(frm && frm->cm && frm->cm->breakpoints &&
+    if(frm && frm->cm && frm->ip >= 0 &&
           (uint32_t)frm->ip < frm->cm->iseq()->opcodes()->num_fields()) {
+      allocate_breakpoints(frm->cm);
       frm->cm->breakpoints[frm->ip] ^= CUSTOM_BREAKPOINT;
       if(frm->cm->breakpoints[frm->ip] & CUSTOM_BREAKPOINT)
         write_record("[debug] breakpoint set\n");
@@ -368,7 +388,11 @@ namespace rubinius {
   }
 
   bool Debugger::command_bpm(STATE, CallFrame* call_frame, const char* cmd) {
-    CompiledMethod* meth = get_method(state, cmd + 3);
+    const char* p = cmd + 3;
+    CompiledMethod* meth;
+
+    get_method(state, p, &meth);
+
     if(!meth->nil_p()) {
       allocate_breakpoints(meth);
       meth->breakpoints[0] ^= CUSTOM_BREAKPOINT;
@@ -609,7 +633,7 @@ namespace rubinius {
     }
   }
 
-  CompiledMethod* Debugger::get_method(STATE, const char* cmd) {
+  const char* Debugger::get_method(STATE, const char* cmd, CompiledMethod** pmeth) {
     const char* p = cmd;
     char method_name[1024];
     uint32_t k = 0;
@@ -628,9 +652,11 @@ namespace rubinius {
       k = k < sz_meth ? k : sz_meth - 1;
       method_name[k] = '\0';
 
-      return get_method(state, mod, method_name);
+      *pmeth = get_method(state, mod, method_name);
+    } else {
+      *pmeth = static_cast<CompiledMethod*>(Qnil);
     }
-    return static_cast<CompiledMethod*>(Qnil);
+    return p;
   }
 
   CompiledMethod* Debugger::get_method(STATE, Module* mod, const char* method_name) {
@@ -729,6 +755,7 @@ namespace rubinius {
     CallFrame* frm = call_frame;
     std::string str;
     char tmp[1024];
+    uint32_t nth_frame = 0;
 
     if((wd = fopen(file, "w")) == NULL) return false;
     fclose(wd);
@@ -739,7 +766,8 @@ namespace rubinius {
         frm = frm->previous;
         continue;
       }
-      str = "";
+      snprintf(tmp, sizeof(tmp), "#%u\n", nth_frame++);
+      str = tmp;
       generate_header(state, frm, str);
       if(SYMBOL_P(frm->cm->file())) {
         snprintf(tmp, sizeof(tmp), "        file: '%s'\n",
