@@ -156,6 +156,43 @@ namespace rubinius {
     }
   }
 
+  void Debugger::generate_backtrace_frame(STATE, CallFrame* call_frame,
+                                          uint32_t nth_frame, std::string& str) {
+    CompiledMethod* cm = call_frame->cm;  /* assumes cm is not null */
+    int sp = call_frame->calculate_sp();
+    VariableScope* scp = call_frame->scope;
+    int num_locals = scp->number_of_locals();
+    int i;
+    char tmp[1024];
+
+    snprintf(tmp, sizeof(tmp), "#%u\n", nth_frame);
+    str += tmp;
+    generate_header(state, call_frame, str);
+    if(SYMBOL_P(cm->file())) {
+      snprintf(tmp, sizeof(tmp), "        file: '%s'\n",
+          cm->file()->c_str(state));
+      str += tmp;
+    }
+    if(num_locals > 0) {
+      str += "        locals:\n";
+      for(i = 0; i < num_locals; i++) {
+        snprintf(tmp, sizeof(tmp), "                %d: %p (%s)\n",
+            i, scp->get_local(i),
+            pointer_role(scp->get_local(i)));
+        str += tmp;
+      }
+    }
+    if(sp >= 0) {
+      str += "        stack:\n";
+      for(; sp >= 0; sp--) {
+        snprintf(tmp, sizeof(tmp), "               %d: %p (%s)\n",
+            sp, call_frame->stack_at((size_t)sp),
+            pointer_role(call_frame->stack_at((size_t)sp)));
+        str += tmp;
+      }
+    }
+  }
+
   void Debugger::write_header(STATE, CallFrame* call_frame) {
     std::string str;
     generate_header(state, call_frame, str);
@@ -754,7 +791,6 @@ namespace rubinius {
     FILE* wd;
     CallFrame* frm = call_frame;
     std::string str;
-    char tmp[1024];
     uint32_t nth_frame = 0;
 
     if((wd = fopen(file, "w")) == NULL) return false;
@@ -766,14 +802,8 @@ namespace rubinius {
         frm = frm->previous;
         continue;
       }
-      snprintf(tmp, sizeof(tmp), "#%u\n", nth_frame++);
-      str = tmp;
-      generate_header(state, frm, str);
-      if(SYMBOL_P(frm->cm->file())) {
-        snprintf(tmp, sizeof(tmp), "        file: '%s'\n",
-            frm->cm->file()->c_str(state));
-        str += tmp;
-      }
+      str = "";
+      generate_backtrace_frame(state, frm, nth_frame++, str);
       if(fwrite(str.c_str(), 1, str.size(), wd) < str.size()) {
         fclose(wd);
         return false;

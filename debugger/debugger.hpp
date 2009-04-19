@@ -39,6 +39,8 @@ namespace rubinius {
     void write_record(const char* out);
     void write_header(STATE, CallFrame* call_frame);
     void generate_header(STATE, CallFrame* call_frame, std::string& str);
+    void generate_backtrace_frame(STATE, CallFrame* call_frame,
+                                  uint32_t nth_frame, std::string& str);
     bool execute_command(STATE, CallFrame* call_frame, const char* cmd);
     void poll_file(STATE, CallFrame* call_frame);
     const char* extract_pid(const char* cmd, uintptr_t* pid);
