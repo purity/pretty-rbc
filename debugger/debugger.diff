@@ -48,7 +48,7 @@ index 3d0bd70..40f122a 100644
      return cm;
    }
 diff --git a/vm/builtin/compiledmethod.hpp b/vm/builtin/compiledmethod.hpp
-index 4c9df31..bb41f52 100644
+index dc5b3df..2f11693 100644
 --- a/vm/builtin/compiledmethod.hpp
 +++ b/vm/builtin/compiledmethod.hpp
 @@ -37,7 +37,7 @@ namespace rubinius {
@@ -61,7 +61,7 @@ index 4c9df31..bb41f52 100644
      attr_accessor(name, Symbol);
      attr_accessor(iseq, InstructionSequence);
 diff --git a/vm/builtin/system.cpp b/vm/builtin/system.cpp
-index c1cdde2..5546505 100644
+index abe3205..94c30ff 100644
 --- a/vm/builtin/system.cpp
 +++ b/vm/builtin/system.cpp
 @@ -43,6 +43,7 @@
@@ -121,34 +121,38 @@ index caf7ac7..0e5e8a0 100644
      }
    }
  }
+diff --git a/vm/vm.cpp b/vm/vm.cpp
+index a3c6e97..be03b4e 100644
+--- a/vm/vm.cpp
++++ b/vm/vm.cpp
+@@ -49,6 +49,7 @@ namespace rubinius {
+     , om(0)
+     , global_cache(0)
+     , user_config(0)
++    , debug(NULL)
+   {}
+ 
+   SharedState::~SharedState() {
 diff --git a/vm/vm.hpp b/vm/vm.hpp
-index 456287a..2a3d772 100644
+index f868678..7638216 100644
 --- a/vm/vm.hpp
 +++ b/vm/vm.hpp
-@@ -100,6 +100,7 @@ namespace rubinius {
+@@ -104,6 +104,7 @@ namespace rubinius {
    class Waiter;
    class SignalThread;
    class LookupTable;
 +  class Debugger;
  
-   /* Indirect object handles for references to Ruby objects in
-    * native code extensions.
-@@ -128,6 +129,7 @@ namespace rubinius {
+   class SharedState : public RefCount {
+   private:
+@@ -127,6 +128,7 @@ namespace rubinius {
      Interrupts interrupts;
      SymbolTable symbols;
      ConfigParser *user_config;
 +    Debugger* debug;
  
    public:
-     SharedState(VMManager& manager, int id)
-@@ -139,6 +141,7 @@ namespace rubinius {
-       , om(0)
-       , global_cache(0)
-       , user_config(0)
-+      , debug(NULL)
-     {}
- 
-     ~SharedState();
+     SharedState(VMManager& manager, int id);
 diff --git a/vm/vm_manager.cpp b/vm/vm_manager.cpp
 index 9ae7e6f..7aafac3 100644
 --- a/vm/vm_manager.cpp
