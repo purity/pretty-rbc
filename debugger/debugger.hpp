@@ -38,9 +38,6 @@ namespace rubinius {
     void set_files();
     void write_record(const char* out);
     void write_header(STATE, CallFrame* call_frame);
-    void generate_header(STATE, CallFrame* call_frame, std::string& str);
-    void generate_backtrace_frame(STATE, CallFrame* call_frame,
-                                  uint32_t nth_frame, std::string& str);
     bool execute_command(STATE, CallFrame* call_frame, const char* cmd);
     void poll_file(STATE, CallFrame* call_frame);
     const char* extract_pid(const char* cmd, uintptr_t* pid);
@@ -57,6 +54,17 @@ namespace rubinius {
     bool write_backtrace(STATE, CallFrame* call_frame, const char* file);
 
   private:
+    void generate_header(STATE, CallFrame* call_frame, std::string& str);
+    void generate_backtrace_frame(STATE, CallFrame* call_frame,
+                                  uint32_t nth_frame, std::string& str);
+    void generate_stack(STATE, CallFrame* call_frame,
+                        const char* spaces, std::string& str);
+    void generate_locals(STATE, CallFrame* call_frame,
+                         const char* spaces, std::string& str);
+    void generate_ivars(STATE, CallFrame* call_frame,
+                        const char* spaces, std::string& str);
+
+  private:
     bool command_n(STATE, CallFrame* call_frame);
     bool command_s(STATE, CallFrame* call_frame);
     bool command_r(STATE, CallFrame* call_frame);
@@ -66,6 +74,7 @@ namespace rubinius {
     bool command_bpm(STATE, CallFrame* call_frame, const char* cmd);
     bool command_stk(STATE, CallFrame* call_frame);
     bool command_l(STATE, CallFrame* call_frame);
+    bool command_iv(STATE, CallFrame* call_frame);
     bool command_f(STATE, CallFrame* call_frame);
     bool command_bt(STATE, CallFrame* call_frame, const char* cmd);
 

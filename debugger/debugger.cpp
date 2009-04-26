@@ -3,8 +3,10 @@
 #include "builtin/class.hpp"
 #include "builtin/symbol.hpp"
 #include "builtin/fixnum.hpp"
+#include "builtin/compactlookuptable.hpp"
 #include "builtin/lookuptable.hpp"
 #include "builtin/methodvisibility.hpp"
+#include "builtin/array.hpp"
 
 #include "debugger.hpp"
 
@@ -119,39 +121,42 @@ namespace rubinius {
     opcode op = get_opcode_ins(state, cm->iseq()->opcodes(), ip + 1);
     Symbol* name;
 
-    snprintf(tmp, sizeof(tmp), "[debug] process id: %p, thread id: %p,\n"
-                            "        self pointer: %p, method pointer: %p,\n"
-                            "        sp: %d, ip: %d, line: %d,\n"
-                            "        instruction: '%s'\n",
-        (void*)getpid(), (void*)pthread_self(), self, cm,
-        call_frame->calculate_sp(), ip + 1, cm->line(state, ip + 1),
+    snprintf(tmp, sizeof(tmp), "[debug] context\n"
+                               "  process id: %p, thread id: %p,\n"
+                               "  self pointer: %p (%s),\n"
+                               "  method pointer: %p,\n"
+                               "  sp: %d, ip: %d, line: %d,\n"
+                               "  instruction: '%s'\n",
+        (void*)getpid(), (void*)pthread_self(), self,
+        pointer_role(self), cm, call_frame->calculate_sp(),
+        ip + 1, cm->line(state, ip + 1),
         InstructionSequence::get_instruction_name(op));
     str += tmp;
 
     if(kind_of<Class>(self) || kind_of<Module>(self)) {
       name = static_cast<Module*>(self)->name();
       if(SYMBOL_P(name)) {
-        snprintf(tmp, sizeof(tmp), "        self class name: '%s'\n",
+        snprintf(tmp, sizeof(tmp), "  self class name: '%s'\n",
             name->c_str(state));
         str += tmp;
       }
     } else {
       name = self->class_object(state)->name();
       if(SYMBOL_P(name)) {
-        snprintf(tmp, sizeof(tmp), "        self class name: '%s'\n",
+        snprintf(tmp, sizeof(tmp), "  self class name: '%s'\n",
             name->c_str(state));
         str += tmp;
       }
     }
 
     if(SYMBOL_P(cm->name())) {
-      snprintf(tmp, sizeof(tmp), "        method name: '%s'\n",
+      snprintf(tmp, sizeof(tmp), "  method name: '%s'\n",
           cm->name()->c_str(state));
       str += tmp;
     }
 
     if(!cm->backend_method_) {
-      snprintf(tmp, sizeof(tmp), "        backend_method_ is NULL\n");
+      snprintf(tmp, sizeof(tmp), "  backend_method_ is NULL\n");
       str += tmp;
     }
   }
@@ -160,37 +165,90 @@ namespace rubinius {
                                           uint32_t nth_frame, std::string& str) {
     CompiledMethod* cm = call_frame->cm;  /* assumes cm is not null */
     int sp = call_frame->calculate_sp();
-    VariableScope* scp = call_frame->scope;
-    int num_locals = scp->number_of_locals();
-    int i;
+    int num_locals = call_frame->scope->number_of_locals();
     char tmp[1024];
+    std::string ivar_content;
 
     snprintf(tmp, sizeof(tmp), "#%u\n", nth_frame);
     str += tmp;
     generate_header(state, call_frame, str);
     if(SYMBOL_P(cm->file())) {
-      snprintf(tmp, sizeof(tmp), "        file: '%s'\n",
+      snprintf(tmp, sizeof(tmp), "  file: '%s'\n",
           cm->file()->c_str(state));
       str += tmp;
     }
     if(num_locals > 0) {
-      str += "        locals:\n";
-      for(i = 0; i < num_locals; i++) {
-        snprintf(tmp, sizeof(tmp), "                %d: %p (%s)\n",
-            i, scp->get_local(i),
-            pointer_role(scp->get_local(i)));
-        str += tmp;
-      }
+      str += "  locals:\n";
+      generate_locals(state, call_frame, "    ", str);
     }
     if(sp >= 0) {
-      str += "        stack:\n";
-      for(; sp >= 0; sp--) {
-        snprintf(tmp, sizeof(tmp), "               %d: %p (%s)\n",
-            sp, call_frame->stack_at((size_t)sp),
-            pointer_role(call_frame->stack_at((size_t)sp)));
-        str += tmp;
-      }
+      str += "  stack:\n";
+      generate_stack(state, call_frame, "    ", str);
     }
+    generate_ivars(state, call_frame, "    ", ivar_content);
+    if(ivar_content.size() > 0) {
+      str += "  ivars:\n";
+      str += ivar_content;
+    }
+  }
+
+  void Debugger::generate_stack(STATE, CallFrame* call_frame,
+                                const char* spaces, std::string& str) {
+    int sp = call_frame->calculate_sp();
+    char tmp[256];
+
+    for(; sp >= 0; sp--) {
+      snprintf(tmp, sizeof(tmp), "%s%d: %p (%s)\n",
+          spaces, sp, call_frame->stack_at((size_t)sp),
+          pointer_role(call_frame->stack_at((size_t)sp)));
+      str += tmp;
+    }
+  }
+
+  void Debugger::generate_locals(STATE, CallFrame* call_frame,
+                                 const char* spaces, std::string& str) {
+    VariableScope* scp = call_frame->scope;
+    int num_locals = scp->number_of_locals();
+    int i;
+    char tmp[256];
+
+    for(i = 0; i < num_locals; i++) {
+      snprintf(tmp, sizeof(tmp), "%s%d: %p (%s)\n",
+          spaces, i, scp->get_local(i),
+          pointer_role(scp->get_local(i)));
+      str += tmp;
+    }
+  }
+
+  void Debugger::generate_ivars(STATE, CallFrame* call_frame,
+                                const char* spaces, std::string& str) {
+    Object *obj, *self = call_frame->self();
+    LookupTable* lt;
+    CompactLookupTable* clt;
+    Array* keys;
+    int i;
+    char tmp[256];
+    Object *key, *val;
+    intptr_t num_keys;
+
+    #define FORMAT_KEY_VAL_PAIR(keys_meth, tbl) \
+      keys = tbl->keys_meth(state);\
+      num_keys = keys->total()->to_native();\
+      for(i = 0; i < num_keys; i++) {\
+        key = keys->get(state, i);\
+        val = tbl->fetch(state, key);\
+        snprintf(tmp, sizeof(tmp), "%s%p (%s): %p (%s)\n",\
+            spaces, key, pointer_role(key), val, pointer_role(val));\
+        str += tmp;\
+      }
+
+    obj = self->get_ivars(state);
+    if((clt = try_as<CompactLookupTable>(obj))) {
+      FORMAT_KEY_VAL_PAIR(keys, clt)
+    } else if((lt = try_as<LookupTable>(obj))) {
+      FORMAT_KEY_VAL_PAIR(all_keys, lt)
+    }
+    #undef FORMAT_KEY_VAL_PAIR
   }
 
   void Debugger::write_header(STATE, CallFrame* call_frame) {
@@ -294,6 +352,9 @@ namespace rubinius {
     }
     else if(strcmp(cmd, "l") == 0) {
       return command_l(state, call_frame);
+    }
+    else if(strcmp(cmd, "iv") == 0) {
+      return command_iv(state, call_frame);
     }
     else if(strcmp(cmd, "f") == 0) {
       return command_f(state, call_frame);
@@ -446,31 +507,21 @@ namespace rubinius {
 
   bool Debugger::command_stk(STATE, CallFrame* call_frame) {
     std::string str = "[debug] stack\n";
-    int sp = call_frame->calculate_sp();
-    char tmp[256];
-
-    for(; sp >= 0; sp--) {
-      snprintf(tmp, sizeof(tmp), "%d: %p (%s)\n",
-          sp, call_frame->stack_at((size_t)sp),
-          pointer_role(call_frame->stack_at((size_t)sp)));
-      str += tmp;
-    }
+    generate_stack(state, call_frame, "  ", str);
     write_record(str.c_str());
     return false;
   }
 
   bool Debugger::command_l(STATE, CallFrame* call_frame) {
-    VariableScope* scp = call_frame->scope;
-    int num_locals = scp->number_of_locals();
-    int i;
-    char tmp[256];
     std::string str = "[debug] locals\n";
+    generate_locals(state, call_frame, "  ", str);
+    write_record(str.c_str());
+    return false;
+  }
 
-    for(i = 0; i < num_locals; i++) {
-      snprintf(tmp, sizeof(tmp), "%d: %p (%s)\n", i, scp->get_local(i),
-          pointer_role(scp->get_local(i)));
-      str += tmp;
-    }
+  bool Debugger::command_iv(STATE, CallFrame* call_frame) {
+    std::string str = "[debug] ivars\n";
+    generate_ivars(state, call_frame, "  ", str);
     write_record(str.c_str());
     return false;
   }
@@ -489,20 +540,20 @@ namespace rubinius {
       frm = frm->previous;
     }
 
-    snprintf(tmp, sizeof(tmp), "frames: %u\n", frame_count);
+    snprintf(tmp, sizeof(tmp), "  frames: %u\n", frame_count);
     str += tmp;
-    snprintf(tmp, sizeof(tmp), "args: %d\n", call_frame->args);
+    snprintf(tmp, sizeof(tmp), "  args: %d\n", call_frame->args);
     str += tmp;
-    snprintf(tmp, sizeof(tmp), "stack size: %d\n", call_frame->stack_size);
+    snprintf(tmp, sizeof(tmp), "  stack size: %d\n", call_frame->stack_size);
     str += tmp;
-    snprintf(tmp, sizeof(tmp), "locals: %d\n", call_frame->scope->number_of_locals());
+    snprintf(tmp, sizeof(tmp), "  locals: %d\n", call_frame->scope->number_of_locals());
     str += tmp;
-    snprintf(tmp, sizeof(tmp), "unwind: %d\n", call_frame->current_unwind);
+    snprintf(tmp, sizeof(tmp), "  unwind: %d\n", call_frame->current_unwind);
     str += tmp;
-    snprintf(tmp, sizeof(tmp), "opcodes: %u\n", num_ops);
+    snprintf(tmp, sizeof(tmp), "  opcodes: %u\n", num_ops);
     str += tmp;
     if(SYMBOL_P(cm->file())) {
-      snprintf(tmp, sizeof(tmp), "file: '%s'\n", cm->file()->c_str(state));
+      snprintf(tmp, sizeof(tmp), "  file: '%s'\n", cm->file()->c_str(state));
       str += tmp;
     }
 
