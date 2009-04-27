@@ -9,6 +9,7 @@
 #include "builtin/iseq.hpp"
 
 namespace rubinius {
+  typedef std::map<Object*, bool> SelfPointers;
 
   class Debugger {
   public:
@@ -56,7 +57,7 @@ namespace rubinius {
   private:
     void generate_header(STATE, CallFrame* call_frame, std::string& str);
     void generate_backtrace_frame(STATE, CallFrame* call_frame,
-                                  uint32_t nth_frame, std::string& str);
+        uint32_t nth_frame, SelfPointers& self_pointers, std::string& str);
     void generate_stack(STATE, CallFrame* call_frame,
                         const char* spaces, std::string& str);
     void generate_locals(STATE, CallFrame* call_frame,

@@ -162,12 +162,13 @@ namespace rubinius {
   }
 
   void Debugger::generate_backtrace_frame(STATE, CallFrame* call_frame,
-                                          uint32_t nth_frame, std::string& str) {
+          uint32_t nth_frame, SelfPointers& self_pointers, std::string& str) {
     CompiledMethod* cm = call_frame->cm;  /* assumes cm is not null */
     int sp = call_frame->calculate_sp();
     int num_locals = call_frame->scope->number_of_locals();
     char tmp[1024];
     std::string ivar_content;
+    Object* self = call_frame->self();
 
     snprintf(tmp, sizeof(tmp), "#%u\n", nth_frame);
     str += tmp;
@@ -185,10 +186,13 @@ namespace rubinius {
       str += "  stack:\n";
       generate_stack(state, call_frame, "    ", str);
     }
-    generate_ivars(state, call_frame, "    ", ivar_content);
-    if(ivar_content.size() > 0) {
-      str += "  ivars:\n";
-      str += ivar_content;
+    if(self_pointers.count(self) == 0) {
+      generate_ivars(state, call_frame, "    ", ivar_content);
+      if(ivar_content.size() > 0) {
+        str += "  ivars:\n";
+        str += ivar_content;
+      }
+      self_pointers[self] = true;
     }
   }
 
@@ -843,6 +847,7 @@ namespace rubinius {
     CallFrame* frm = call_frame;
     std::string str;
     uint32_t nth_frame = 0;
+    SelfPointers self_pointers;
 
     if((wd = fopen(file, "w")) == NULL) return false;
     fclose(wd);
@@ -854,7 +859,7 @@ namespace rubinius {
         continue;
       }
       str = "";
-      generate_backtrace_frame(state, frm, nth_frame++, str);
+      generate_backtrace_frame(state, frm, nth_frame++, self_pointers, str);
       if(fwrite(str.c_str(), 1, str.size(), wd) < str.size()) {
         fclose(wd);
         return false;
