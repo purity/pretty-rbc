@@ -235,7 +235,7 @@ namespace rubinius {
     Object *key, *val;
     intptr_t num_keys;
 
-    #define FORMAT_KEY_VAL_PAIR(keys_meth, tbl) \
+    #define FORMAT_KEY_VAL_PAIRS(keys_meth, tbl) \
       keys = tbl->keys_meth(state);\
       num_keys = keys->total()->to_native();\
       for(i = 0; i < num_keys; i++) {\
@@ -248,11 +248,11 @@ namespace rubinius {
 
     obj = self->get_ivars(state);
     if((clt = try_as<CompactLookupTable>(obj))) {
-      FORMAT_KEY_VAL_PAIR(keys, clt)
+      FORMAT_KEY_VAL_PAIRS(keys, clt)
     } else if((lt = try_as<LookupTable>(obj))) {
-      FORMAT_KEY_VAL_PAIR(all_keys, lt)
+      FORMAT_KEY_VAL_PAIRS(all_keys, lt)
     }
-    #undef FORMAT_KEY_VAL_PAIR
+    #undef FORMAT_KEY_VAL_PAIRS
   }
 
   void Debugger::write_header(STATE, CallFrame* call_frame) {

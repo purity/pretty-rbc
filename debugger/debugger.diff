@@ -1,8 +1,8 @@
 diff --git a/kernel/compiler/generator.rb b/kernel/compiler/generator.rb
-index d4738a0..7d22742 100644
+index a8906b9..d48c24c 100644
 --- a/kernel/compiler/generator.rb
 +++ b/kernel/compiler/generator.rb
-@@ -45,6 +45,7 @@ class Compiler
+@@ -43,6 +43,7 @@ class Compiler
        @last = nil
  
        @exceptions = []
@@ -10,7 +10,7 @@ index d4738a0..7d22742 100644
      end
  
      attr_reader :cache_size, :literals
-@@ -221,6 +222,11 @@ class Compiler
+@@ -219,6 +220,11 @@ class Compiler
  
        return unless what
  
@@ -22,7 +22,7 @@ index d4738a0..7d22742 100644
        @ip += what.size
        if what.size == 1
          @stream << what.first
-@@ -231,6 +237,12 @@ class Compiler
+@@ -229,6 +235,12 @@ class Compiler
  
      def flush
        return unless @last
@@ -36,10 +36,10 @@ index d4738a0..7d22742 100644
        if @last.size == 1
          @stream << @last.first
 diff --git a/vm/builtin/compiledmethod.cpp b/vm/builtin/compiledmethod.cpp
-index 3d0bd70..40f122a 100644
+index 5c69163..f54cf12 100644
 --- a/vm/builtin/compiledmethod.cpp
 +++ b/vm/builtin/compiledmethod.cpp
-@@ -37,6 +37,7 @@ namespace rubinius {
+@@ -39,6 +39,7 @@ namespace rubinius {
      cm->local_count(state, Fixnum::from(0));
      cm->set_executor(CompiledMethod::default_executor);
      cm->backend_method_ = NULL;
@@ -61,7 +61,7 @@ index dc5b3df..2f11693 100644
      attr_accessor(name, Symbol);
      attr_accessor(iseq, InstructionSequence);
 diff --git a/vm/builtin/system.cpp b/vm/builtin/system.cpp
-index abe3205..94c30ff 100644
+index ba5757a..c77844d 100644
 --- a/vm/builtin/system.cpp
 +++ b/vm/builtin/system.cpp
 @@ -43,6 +43,7 @@
@@ -82,10 +82,10 @@ index abe3205..94c30ff 100644
  
      /*  @todo EVFLAG_FORKCHECK should remove need for any maintenance
 diff --git a/vm/helpers.cpp b/vm/helpers.cpp
-index caf7ac7..0e5e8a0 100644
+index e3749da..d171d1f 100644
 --- a/vm/helpers.cpp
 +++ b/vm/helpers.cpp
-@@ -21,6 +21,7 @@
+@@ -22,6 +22,7 @@
  #include "arguments.hpp"
  #include "call_frame.hpp"
  #include "lookup_data.hpp"
@@ -93,7 +93,7 @@ index caf7ac7..0e5e8a0 100644
  
  namespace rubinius {
    namespace Helpers {
-@@ -271,26 +272,7 @@ namespace rubinius {
+@@ -263,26 +264,7 @@ namespace rubinius {
      }
  
      void yield_debugger(STATE, CallFrame* call_frame) {
@@ -121,52 +121,51 @@ index caf7ac7..0e5e8a0 100644
      }
    }
  }
-diff --git a/vm/vm.cpp b/vm/vm.cpp
-index a3c6e97..be03b4e 100644
---- a/vm/vm.cpp
-+++ b/vm/vm.cpp
-@@ -49,6 +49,7 @@ namespace rubinius {
-     , om(0)
+diff --git a/vm/shared_state.cpp b/vm/shared_state.cpp
+index ffb3eed..1518a65 100644
+--- a/vm/shared_state.cpp
++++ b/vm/shared_state.cpp
+@@ -5,6 +5,7 @@
+ #include "instruments/profiler.hpp"
+ #include "global_cache.hpp"
+ #include "capi/handle.hpp"
++#include "debugger.hpp"
+ 
+ namespace rubinius {
+   SharedState::SharedState()
+@@ -17,6 +18,7 @@ namespace rubinius {
      , global_cache(0)
      , user_config(0)
-+    , debug(NULL)
-   {}
+   {
++    debug = new Debugger();
+     ref();
+   }
  
-   SharedState::~SharedState() {
-diff --git a/vm/vm.hpp b/vm/vm.hpp
-index f868678..7638216 100644
---- a/vm/vm.hpp
-+++ b/vm/vm.hpp
-@@ -104,6 +104,7 @@ namespace rubinius {
-   class Waiter;
-   class SignalThread;
-   class LookupTable;
+@@ -27,6 +29,7 @@ namespace rubinius {
+     delete global_cache;
+     delete user_config;
+     delete global_handles_;
++    delete debug;
+ 
+ #ifdef ENABLE_LLVM
+     if(!reuse_llvm) llvm_cleanup();
+diff --git a/vm/shared_state.hpp b/vm/shared_state.hpp
+index f4ad680..0ce6762 100644
+--- a/vm/shared_state.hpp
++++ b/vm/shared_state.hpp
+@@ -25,6 +25,7 @@ namespace rubinius {
+   class GlobalCache;
+   class ConfigParser;
+   class VM;
 +  class Debugger;
  
-   class SharedState : public RefCount {
-   private:
-@@ -127,6 +128,7 @@ namespace rubinius {
+   struct Configuration {
+     bool compile_up_front;
+@@ -74,6 +75,7 @@ namespace rubinius {
      Interrupts interrupts;
      SymbolTable symbols;
      ConfigParser *user_config;
 +    Debugger* debug;
  
    public:
-     SharedState(VMManager& manager, int id);
-diff --git a/vm/vm_manager.cpp b/vm/vm_manager.cpp
-index 9ae7e6f..7aafac3 100644
---- a/vm/vm_manager.cpp
-+++ b/vm/vm_manager.cpp
-@@ -1,10 +1,12 @@
- #include "vm_manager.hpp"
- #include "vm.hpp"
-+#include "debugger.hpp"
- 
- namespace rubinius {
-   SharedState* VMManager::create_shared_state() {
-     SharedState* shared = new SharedState(*this, share_id_++);
-     shares_[shared->id()] = shared;
-+    shared->debug = new Debugger();
-     return shared;
-   }
- 
+     SharedState();
