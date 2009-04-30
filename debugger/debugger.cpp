@@ -19,6 +19,7 @@ namespace rubinius {
     , write_file(NULL)
     , instruction_count(0)
     , bp_instruction_count(0)
+    , thread_id(0)
   {
     pthread_mutex_init(&mutex, NULL);
   }
@@ -33,10 +34,10 @@ namespace rubinius {
 
     pthread_mutex_lock(&mutex);
 
-    if(!(options & NO_DEBUG_DIR)) {
+    if(!(options & NO_DEBUG_DIR) &&
+            (thread_id == 0 || thread_id == (uintptr_t)pthread_self())) {
 
       ++instruction_count;
-
       allocate_breakpoints(cm);
 
       if(instruction_count == bp_instruction_count ||
@@ -366,6 +367,9 @@ namespace rubinius {
     else if(strncmp(cmd, "bt", 2) == 0) {
       return command_bt(state, call_frame, cmd);
     }
+    else if(strncmp(cmd, "t", 1) == 0) {
+      return command_t(state, call_frame, cmd);
+    }
     else {
       write_record("[debug] command not recognized\n");
       return false;
@@ -411,8 +415,8 @@ namespace rubinius {
   }
 
   bool Debugger::command_bpc(STATE, CallFrame* call_frame, const char* cmd) {
-    uint32_t offset;
-    if(extract_number(cmd, &offset)) {
+    uintptr_t offset;
+    if(extract_number(cmd, &offset, isdigit, dec_char_to_num)) {
       bp_instruction_count = instruction_count + offset;
       options |= IGNORE_STEP_BREAKPOINT;
       options |= IGNORE_CUSTOM_BREAKPOINT;
@@ -429,12 +433,12 @@ namespace rubinius {
     CallFrame* frm = call_frame;
     CompiledMethod* cm;
     Tuple* ops;
-    uint32_t num_ops, idx;
-    uint32_t bpip, ydip = 0, k, nth_ins = 0;
+    uintptr_t num_ops, idx;
+    uintptr_t bpip, ydip = 0, k, nth_ins = 0;
     opcode op;
 
-    if((p = extract_number(p, &bpip))) {
-      extract_number(p, &idx);
+    if((p = extract_number(p, &bpip, isdigit, dec_char_to_num))) {
+      extract_number(p, &idx, isdigit, dec_char_to_num);
       while(idx > 0) {
         if(frm->cm) --idx;
         if(frm->previous)
@@ -587,6 +591,43 @@ namespace rubinius {
     return false;
   }
 
+  bool Debugger::command_t(STATE, CallFrame* call_frame, const char* cmd) {
+    const char* p = cmd + 1;
+    uintptr_t tid;
+
+    if(extract_number(p, &tid, isxdigit, hex_char_to_num)) {
+      thread_id = tid;
+      write_record("[debug] thread id set\n");
+      if(thread_id != 0 && thread_id != (uintptr_t)pthread_self()) {
+        return command_bpc(state, call_frame, "bpc 1");
+      } else {
+        return false;
+      }
+    } else {
+      write_record("[debug] thread id not given for t command\n");
+      return false;
+    }
+  }
+
+  uintptr_t Debugger::hex_char_to_num(char hex, uintptr_t* pow16) {
+    uintptr_t num = 0;
+    if(hex >= '0' && hex <= '9') {
+      num = (uintptr_t)(hex - '0') * *pow16;
+    } else if(hex >= 'a' && hex <= 'f') {
+      num = (uintptr_t)(hex - 'W') * *pow16;
+    } else if(hex >= 'A' && hex <= 'F') {
+      num = (uintptr_t)(hex - '7') * *pow16;
+    }
+    *pow16 *= 16;
+    return num;
+  }
+
+  uintptr_t Debugger::dec_char_to_num(char dec, uintptr_t* pow10) {
+    uintptr_t num = (uintptr_t)(dec - '0') * *pow10;
+    *pow10 *= 10;
+    return num;
+  }
+
   // expects the pid to be at the beginning of the string
   // and to be hex characters (with or without a '0x' prefix).
   // returns the start of the command after the pid
@@ -608,36 +649,24 @@ namespace rubinius {
       ++p;
     }
 
-    if(hex >= cmd && *hex) {
+    if(hex >= cmd && isxdigit(*hex)) {
       do {
-        if(*hex >= '0' && *hex <= '9') {
-          *pid += (uintptr_t)(*hex - '0') * pow16;
-          pow16 *= 16;
-        }
-        else if(*hex >= 'a' && *hex <= 'f') {
-          *pid += (uintptr_t)(*hex - 'W') * pow16;
-          pow16 *= 16;
-        }
-        else if(*hex >= 'A' && *hex <= 'F') {
-          *pid += (uintptr_t)(*hex - '7') * pow16;
-          pow16 *= 16;
-        }
-        --hex;
-      } while(hex >= cmd);
+        *pid += hex_char_to_num(*hex--, &pow16);
+      } while(hex >= cmd && isxdigit(*hex));
       return strt;
     }
-
     return cmd;
   }
 
-  // base 10 natural number delimited by string boundary and/or spaces
+  // natural number delimited by string boundary and/or spaces
   // returns the pointer to the next token or null byte if found
   //
-  const char* Debugger::extract_number(const char* cmd, uint32_t* num) {
+  const char* Debugger::extract_number(const char* cmd, uintptr_t* num,
+          int (*is_digit)(int), uintptr_t (*char_to_num)(char, uintptr_t*)) {
     const char* rght = cmd;
     const char* lft = NULL;
-    uint32_t digits = 0;
-    uint32_t pow10 = 1;
+    uintptr_t digits = 0;
+    uintptr_t pow = 1;
     *num = 0;
 
     while(*rght) {
@@ -647,10 +676,9 @@ namespace rubinius {
           while(*rght == ' ') ++rght;
           break;
         }
-      }
-      else {
-        if(isdigit(*rght) &&
-              (rght == cmd || isdigit(*(rght - 1)) || *(rght - 1) == ' ')) {
+      } else {
+        if(is_digit(*rght) && (rght == cmd || *(rght - 1) == ' ' ||
+                (is_digit(*(rght - 1)) && digits > 0))) {
           ++digits;
           lft = rght;
         }
@@ -658,19 +686,15 @@ namespace rubinius {
           digits = 0;
         }
       }
-
       ++rght;
     }
 
     if(digits > 0) {
-      while(lft >= cmd && isdigit(*lft)) {
-        *num += (uint32_t)(*lft - '0') * pow10;
-        pow10 *= 10;
-        --lft;
+      while(lft >= cmd && is_digit(*lft)) {
+        *num += char_to_num(*lft--, &pow);
       }
       return rght;
     }
-
     return NULL;    // not found
   }
 

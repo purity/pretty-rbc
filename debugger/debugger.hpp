@@ -22,6 +22,7 @@ namespace rubinius {
     const char* write_file;
     uint64_t instruction_count;
     uint64_t bp_instruction_count;
+    uintptr_t thread_id;
 
     enum breakpoint_types {
       NEXT_BREAKPOINT = 1,
@@ -36,13 +37,18 @@ namespace rubinius {
     };
 
   private:
+    static uintptr_t hex_char_to_num(char hex, uintptr_t* pow16);
+    static uintptr_t dec_char_to_num(char dec, uintptr_t* pow10);
+
+  private:
     void set_files();
     void write_record(const char* out);
     void write_header(STATE, CallFrame* call_frame);
     bool execute_command(STATE, CallFrame* call_frame, const char* cmd);
     void poll_file(STATE, CallFrame* call_frame);
     const char* extract_pid(const char* cmd, uintptr_t* pid);
-    const char* extract_number(const char* cmd, uint32_t* num);
+    const char* extract_number(const char* cmd, uintptr_t* num,
+        int (*is_digit)(int), uintptr_t (*char_to_num)(char, uintptr_t*));
     void rtrim(char* str);
     bool numeric_string(char* str);
     opcode get_opcode_ins(STATE, Tuple* tup, uint32_t idx);
@@ -78,6 +84,7 @@ namespace rubinius {
     bool command_iv(STATE, CallFrame* call_frame);
     bool command_f(STATE, CallFrame* call_frame);
     bool command_bt(STATE, CallFrame* call_frame, const char* cmd);
+    bool command_t(STATE, CallFrame* call_frame, const char* cmd);
 
   public:
     Debugger();
