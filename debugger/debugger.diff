@@ -61,18 +61,19 @@ index dc5b3df..2f11693 100644
      attr_accessor(name, Symbol);
      attr_accessor(iseq, InstructionSequence);
 diff --git a/vm/builtin/system.cpp b/vm/builtin/system.cpp
-index ba5757a..c77844d 100644
+index 3475a26..8339e90 100644
 --- a/vm/builtin/system.cpp
 +++ b/vm/builtin/system.cpp
-@@ -43,6 +43,7 @@
+@@ -43,7 +43,7 @@
  #include "builtin/sendsite.hpp"
  
  #include "instruments/stats.hpp"
+-
 +#include "debugger.hpp"
+ #include "configuration.hpp"
  
  namespace rubinius {
- 
-@@ -157,6 +158,8 @@ namespace rubinius {
+@@ -159,6 +159,8 @@ namespace rubinius {
  
      if ( -1 == result ) {
        Exception::errno_error(state, "fork() failed!");
@@ -122,7 +123,7 @@ index e3749da..d171d1f 100644
    }
  }
 diff --git a/vm/shared_state.cpp b/vm/shared_state.cpp
-index ffb3eed..1518a65 100644
+index 86740ad..83b1836 100644
 --- a/vm/shared_state.cpp
 +++ b/vm/shared_state.cpp
 @@ -5,6 +5,7 @@
@@ -132,40 +133,40 @@ index ffb3eed..1518a65 100644
 +#include "debugger.hpp"
  
  namespace rubinius {
-   SharedState::SharedState()
-@@ -17,6 +18,7 @@ namespace rubinius {
-     , global_cache(0)
-     , user_config(0)
+   SharedState::SharedState(Configuration& config, ConfigParser& cp)
+@@ -18,6 +19,7 @@ namespace rubinius {
+     , config(config)
+     , user_variables(cp)
    {
 +    debug = new Debugger();
      ref();
    }
  
 @@ -27,6 +29,7 @@ namespace rubinius {
+     delete om;
      delete global_cache;
-     delete user_config;
      delete global_handles_;
 +    delete debug;
  
  #ifdef ENABLE_LLVM
      if(!reuse_llvm) llvm_cleanup();
 diff --git a/vm/shared_state.hpp b/vm/shared_state.hpp
-index f4ad680..0ce6762 100644
+index 3576a48..998409a 100644
 --- a/vm/shared_state.hpp
 +++ b/vm/shared_state.hpp
-@@ -25,6 +25,7 @@ namespace rubinius {
-   class GlobalCache;
+@@ -26,6 +26,7 @@ namespace rubinius {
    class ConfigParser;
    class VM;
+   class Configuration;
 +  class Debugger;
  
-   struct Configuration {
-     bool compile_up_front;
-@@ -74,6 +75,7 @@ namespace rubinius {
+   struct Interrupts {
+     bool check;
+@@ -69,6 +70,7 @@ namespace rubinius {
+     ConfigParser& user_variables;
      Interrupts interrupts;
      SymbolTable symbols;
-     ConfigParser *user_config;
 +    Debugger* debug;
  
    public:
-     SharedState();
+     SharedState(Configuration& config, ConfigParser& cp);
