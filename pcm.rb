@@ -105,7 +105,7 @@ module PrettyCM
     tabs = TAB * depth
 
     case obj
-    when CompiledMethod
+    when Rubinius::CompiledMethod
       out << "#{NEWLINE + tabs}" unless depth == 0
       out << "CompiledMethod 17"
       depth += 1
@@ -137,7 +137,7 @@ module PrettyCM
     when Symbol
       str = apply_escape_codes(obj.to_s)
       out << "#{NEWLINE + tabs}Symbol \"#{str}\""
-    when InstructionSequence
+    when Rubinius::InstructionSequence
       i = 0
       obj = obj.decode
       out << "#{NEWLINE + tabs}InstructionSequence #{obj.size}"
@@ -151,14 +151,15 @@ module PrettyCM
       end
 
       out
-    when Tuple, Array
-      out << "#{NEWLINE + tabs}#{obj.class.name} #{obj.size}"
+    when Rubinius::Tuple, Array
+      out << NEWLINE + tabs
+      out << (obj.kind_of?(Array) ? 'Array' : 'Tuple') + " #{obj.size}"
       depth += 1
       obj.each do |elem|
         out << dump(elem, depth)
       end
       out
-    when SendSite
+    when Rubinius::SendSite
       str = apply_escape_codes(obj.name.to_s)
       out << "#{NEWLINE + tabs}SendSite \"#{str}\""
     when String
@@ -218,7 +219,7 @@ module PrettyCM
     when REGEX_COMMENT
       load(str, tokens)
     when 'CompiledMethod'
-      cm = CompiledMethod.new
+      cm = Rubinius::CompiledMethod.new
       useless                 = load(str, tokens)
       cm.hints                = load(str, tokens)
       cm.__ivars__            = load(str, tokens)
@@ -247,7 +248,7 @@ module PrettyCM
     when 'Symbol'
       load(str, tokens).to_sym
     when 'InstructionSequence'
-      encoder = InstructionSequence::Encoder.new
+      encoder = Rubinius::InstructionSequence::Encoder.new
       layered_iseq = []
       size = load(str, tokens)
 
@@ -262,7 +263,7 @@ module PrettyCM
             when 'Array'
               Array.new(size)
             when 'Tuple'
-              Tuple.new(size)
+              Rubinius::Tuple.new(size)
             end
 
       (0...size).each do |i|
@@ -272,7 +273,7 @@ module PrettyCM
       arr
     when 'SendSite'
       name = load(str, tokens).to_sym
-      SendSite.new(name)
+      Rubinius::SendSite.new(name)
     when 'String'
       load(str, tokens)
     when 'ByteArray'

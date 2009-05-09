@@ -53,7 +53,7 @@ class InstructionChanges
 
   def finalize
     icc = InstructionChanges
-    encoder = InstructionSequence::Encoder.new
+    encoder = Rubinius::InstructionSequence::Encoder.new
     layered_iseq = icc.wrap(@iseq)
 
     @cm.iseq = encoder.encode_stream(layered_iseq)
@@ -530,7 +530,7 @@ class InstructionChanges
   end
 
   def self.to_tup(ary)
-    tup = Tuple.new(ary.size)
+    tup = Rubinius::Tuple.new(ary.size)
     ary.each_index do |i|
       tup[i] = ary[i]
     end
@@ -539,8 +539,8 @@ class InstructionChanges
 
   def test
 
-    encoder = InstructionSequence::Encoder.new
-    cm = CompiledMethod.new
+    encoder = Rubinius::InstructionSequence::Encoder.new
+    cm = Rubinius::CompiledMethod.new
     cm.iseq = encoder.encode_stream([[:passed_arg, 10], [:push_true]])
 
     ic = InstructionChanges.new(cm)
@@ -885,11 +885,11 @@ class InstructionChanges
     ic.iseq = [:push_true]
 
     ic.finalize
-    raise "fail 83.0" unless ic.cm.iseq.instance_of? InstructionSequence
-    raise "fail 83.1" unless ic.cm.literals.instance_of? Tuple
-    raise "fail 83.2" unless ic.cm.local_names.instance_of? Tuple
-    #raise "fail 83.3" unless ic.cm.exceptions.instance_of? Tuple
-    raise "fail 83.4" unless ic.cm.lines.instance_of? Tuple
+    raise "fail 83.0" unless ic.cm.iseq.instance_of? Rubinius::InstructionSequence
+    raise "fail 83.1" unless ic.cm.literals.instance_of? Rubinius::Tuple
+    raise "fail 83.2" unless ic.cm.local_names.instance_of? Rubinius::Tuple
+    #raise "fail 83.3" unless ic.cm.exceptions.instance_of? Rubinius::Tuple
+    raise "fail 83.4" unless ic.cm.lines.instance_of? Rubinius::Tuple
   end
 end
 
